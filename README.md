@@ -23,6 +23,9 @@ underlying metadata.
 Google Photos upload is intentionally out of scope. The archive directory is
 ordinary local files that another tool can import.
 
+For optional local, semi-automatic review and person tagging of downloaded
+photos, see the suggested companion project [`frrad/photo-person-review`](https://github.com/frrad/photo-person-review).
+
 ## Privacy model
 
 The public repository contains code and synthetic examples only. Git ignores:
