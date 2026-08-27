@@ -73,10 +73,13 @@ vidigami report
 vidigami verify
 ```
 
-`auth login` opens the system browser for a normal OAuth Authorization Code +
-PKCE login and listens only on the configured loopback callback. It does not
-drive the browser. Subsequent scheduled runs use refresh tokens from the OS
-keychain when the provider issues one.
+`auth login` uses Vidigami's direct HTML sign-in flow and prompts for the
+username and password without storing either. It retains cookies only in
+memory, keeps the OAuth Authorization Code + PKCE state in memory, and stops
+before requesting the registered `https://app.vidigami.com/auth-callback`
+redirect. Use `auth login --browser` to try the system-browser loopback flow.
+Subsequent scheduled runs use refresh tokens from the OS keychain when the
+provider issues one.
 
 `sync` first completes page and tagged-user enumeration, reconciles normalized
 ID observations in SQLite, then atomically downloads the selected union. A

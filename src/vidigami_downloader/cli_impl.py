@@ -42,11 +42,22 @@ def main(
 
 
 @auth_app.command("login")
-def auth_login(config_path: ConfigOption = None) -> None:
-    """Open the system browser and save an OAuth session in the OS keychain."""
+def auth_login(
+    config_path: ConfigOption = None,
+    browser: bool = typer.Option(
+        False,
+        "--browser",
+        help="Use the system-browser loopback flow instead of direct HTTP login.",
+    ),
+) -> None:
+    """Prompt for credentials and save an OAuth session in the OS keychain."""
     config = _load(config_path)
     try:
-        oauth_client(config).login()
+        client = oauth_client(config)
+        if browser:
+            client.login()
+        else:
+            client.direct_login()
     except (AuthenticationError, OSError) as exc:
         _error(_safe_error(exc, "Authentication failed"))
     typer.echo("Authentication succeeded; the token is stored in the OS keychain.")

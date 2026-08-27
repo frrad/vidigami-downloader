@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
@@ -70,7 +70,9 @@ class FaceTag:
 @dataclass(frozen=True)
 class DownloadOption:
     quality: str | None
-    url: str
+    # Download URLs are short-lived credentials.  They are intentionally not
+    # included if an option is accidentally rendered in a log or exception.
+    url: str = field(repr=False)
     mime_type: str | None = None
     expires_at: str | None = None
 
@@ -110,6 +112,28 @@ class GraphQLClient:
             raise GraphQLHTTPError("No access token is available; authenticate again")
         return token
 
+    def request_headers(self) -> dict[str, str]:
+        """Return transient headers required by Vidigami media endpoints.
+
+        The returned mapping is created on demand and is never persisted by
+        the client.  In particular, this keeps a refreshed access token out of
+        GraphQL results and application state while allowing signed CDN URLs
+        that require API authorization to be fetched.
+        """
+
+        headers = {"Authorization": f"Bearer {self._token()}"}
+        if self.organization_id:
+            headers["Organization-Id"] = self.organization_id
+        elif self.organization_identifier:
+            headers["x-org-identifier"] = self.organization_identifier
+        if self.space_id:
+            headers["Space-Id"] = self.space_id
+        return headers
+
+    # Kept as a descriptive alias for callers that only use the media API.
+    def download_headers(self) -> dict[str, str]:
+        return self.request_headers()
+
     def _http_transport(
         self,
         query: str,
@@ -148,14 +172,8 @@ class GraphQLClient:
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._token()}",
+            **self.request_headers(),
         }
-        if self.organization_id:
-            headers["Organization-Id"] = self.organization_id
-        elif self.organization_identifier:
-            headers["x-org-identifier"] = self.organization_identifier
-        if self.space_id:
-            headers["Space-Id"] = self.space_id
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
@@ -212,7 +230,7 @@ class GraphQLClient:
         user_id: str,
         *,
         first: int = 100,
-        order_by: str = "CAPTURED_AT_DESC",
+        order_by: str = "RECENTLY_ADDED",
     ) -> list[str]:
         return [
             str(m["id"])

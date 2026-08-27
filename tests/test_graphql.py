@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from vidigami_downloader.graphql import GraphQLClient, GraphQLError
+from vidigami_downloader.graphql import DownloadOption, GraphQLClient, GraphQLError
 
 
 class FakeTransport:
@@ -76,6 +76,22 @@ def test_org_identifier_is_used_until_canonical_org_id_is_known():
     assert "Organization-Id" not in transport.calls[0][2]
 
 
+def test_download_headers_include_auth_and_context_without_option_repr_url():
+    client = GraphQLClient(
+        "synthetic-access",
+        organization_id="org-1",
+        space_id="space-1",
+    )
+    assert client.request_headers() == {
+        "Authorization": "Bearer synthetic-access",
+        "Organization-Id": "org-1",
+        "Space-Id": "space-1",
+    }
+
+    value = DownloadOption("original", "https://cdn.invalid/signed?token=secret")
+    assert "token=secret" not in repr(value)
+
+
 def test_tagged_media_sets_current_connection_arguments():
     transport = FakeTransport(
         [
@@ -97,7 +113,7 @@ def test_tagged_media_sets_current_connection_arguments():
     variables = transport.calls[0][1]
     assert variables == {
         "userId": "user-1",
-        "orderBy": "CAPTURED_AT_DESC",
+        "orderBy": "RECENTLY_ADDED",
         "first": 100,
         "after": None,
     }
