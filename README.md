@@ -86,6 +86,30 @@ ID observations in SQLite, then atomically downloads the selected union. A
 temporary file is checksummed and fsynced before rename. Re-running is
 idempotent and verifies/reuses existing archive files.
 
+## Scheduling on macOS
+
+For periodic unattended runs, use the included launchd setup. It installs a
+per-user agent that runs daily at 03:15 local time, and once at login after a
+shutdown or missed run. Each invocation runs from the repository root and
+executes `sync`, `report --format both`, and `verify` in a fail-fast sequence.
+The generated plist contains your local repository path and lives outside this
+repository:
+
+```console
+./scripts/launchd-install.sh
+```
+
+Output is written to the ignored `logs/launchd.out.log` and
+`logs/launchd.err.log`. To remove the schedule, run:
+
+```console
+./scripts/launchd-uninstall.sh
+```
+
+The agent runs as your macOS user, so it can use the refresh token in that
+user's Keychain. If the token expires or is revoked, run `vidigami auth login`
+interactively again; the scheduler cannot complete an interactive login.
+
 ## Development and CI
 
 ```console

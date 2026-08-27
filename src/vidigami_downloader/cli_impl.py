@@ -162,6 +162,8 @@ def sync(
             "failed": summary.downloads.failed,
         }
     typer.echo(json.dumps(payload, sort_keys=True))
+    if not dry_run and summary.downloads.failed:
+        raise typer.Exit(1)
 
 
 @app.command()

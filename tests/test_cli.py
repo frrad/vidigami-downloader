@@ -126,6 +126,36 @@ def test_sync_dry_run_reports_counts_without_downloads(monkeypatch: Any, tmp_pat
     assert "downloads" not in result.stdout
 
 
+def test_sync_reports_download_failures_and_exits_nonzero(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config_path = _write_config(tmp_path / "config.toml", tmp_path / "state.sqlite3")
+    summary = SyncSummary(
+        result=SyncResult(
+            run_id="sync-with-failure",
+            page_media_count=2,
+            tagged_media_count=0,
+            candidate_count=2,
+            hydrated_count=2,
+            selected_count=2,
+            dry_run=False,
+        ),
+        selected=(),
+        downloads=DownloadSummary(2, 1, 0, 1),
+    )
+
+    monkeypatch.setattr(cli_impl, "run_sync", lambda config, *, dry_run=False: summary)
+    result = runner.invoke(app, ["sync", "--config", str(config_path)])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["downloads"] == {
+        "attempted": 2,
+        "completed": 1,
+        "failed": 1,
+        "reused": 0,
+    }
+
+
 def test_report_writes_id_only_json_and_csv(tmp_path: Path) -> None:
     database = tmp_path / "state.sqlite3"
     config_path = _write_config(tmp_path / "config.toml", database)
