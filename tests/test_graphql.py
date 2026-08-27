@@ -54,7 +54,7 @@ def test_page_media_paginates_and_sends_collection_flag():
     assert transport.calls[0][2]["Authorization"] == "Bearer synthetic-access"
 
 
-def test_tagged_media_sets_required_filters():
+def test_tagged_media_sets_current_connection_arguments():
     transport = FakeTransport(
         [
             {
@@ -73,11 +73,12 @@ def test_tagged_media_sets_required_filters():
 
     assert client.enumerate_tagged_media("user-1") == ["media-1"]
     variables = transport.calls[0][1]
-    assert variables["taggedMedia"] is True
-    assert variables["savedMedia"] is False
-    assert variables["uploadsMedia"] is False
-    assert variables["workMedia"] is False
-    assert variables["format"] == "IMAGE"
+    assert variables == {
+        "userId": "user-1",
+        "orderBy": "CAPTURED_AT_DESC",
+        "first": 100,
+        "after": None,
+    }
 
 
 def test_batch_hydration_preserves_ids_and_download_urls():
@@ -131,7 +132,11 @@ def test_batch_hydration_preserves_ids_and_download_urls():
     containers = client.get_lightbox_media_containers(["media-1", "media-2"])
     tags = client.get_face_tags_on_media(["media-1"])
     downloads = client.get_media_downloads(["media-1"])
-    assert containers["media-1"][0].id == "page-1"
+    assert {(item.container_type, item.container_id, item.parent_page_id)
+            for item in containers["media-1"]} == {
+        ("post", "post-1", "page-1"),
+        ("page", "page-1", "page-1"),
+    }
     assert tags["media-1"][0].user_id == "user-1"
     assert [option.quality for option in downloads["media-1"][1]] == ["original", "web"]
 

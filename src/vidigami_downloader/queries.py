@@ -6,12 +6,11 @@ mixing it into transport or persistence code.
 """
 
 GET_VIEWER = """
-query GetViewer {
-  viewer {
+query GetViewer($spaceId: ID) {
+  viewer(spaceId: $spaceId) {
     id
-    relationships {
-      id
-      user { id }
+    relationshipsConnection(first: 1000) {
+      edges { node { id } type }
     }
   }
 }
@@ -30,14 +29,22 @@ query GetPageMediaIds($pageId: ID!, $first: Int!, $after: String, $includeCollec
 
 GET_USER_MEDIA = """
 query GetUserMedia(
-  $userId: ID!, $first: Int!, $after: String, $format: MediaFormat!, $orderBy: MediaOrder!,
-  $savedMedia: Boolean!, $taggedMedia: Boolean!, $uploadsMedia: Boolean!, $workMedia: Boolean!
+  $after: String
+  $before: String
+  $first: Int!
+  $orderBy: MediaOrder!
+  $type: MediaType
+  $userId: ID!
+  $year: Int
 ) {
   user(id: $userId) {
     taggedMediaConnection(
-      first: $first, after: $after, format: $format, orderBy: $orderBy,
-      savedMedia: $savedMedia, taggedMedia: $taggedMedia,
-      uploadsMedia: $uploadsMedia, workMedia: $workMedia
+      after: $after
+      before: $before
+      first: $first
+      orderBy: $orderBy
+      type: $type
+      year: $year
     ) {
       edges { node { id type } cursor }
       pageInfo { hasNextPage endCursor }
@@ -50,9 +57,9 @@ GET_LIGHTBOX_MEDIA_CONTAINERS = """
 query GetLightboxMediaContainers($mediaIds: [ID!]!) {
   media(ids: $mediaIds) {
     id
-    posts { id createdAt page { id name space { id } } }
-    events { id name pagesConnection(first: 1) { nodes { id space { id } } } }
-    collections { id name legacyAlbum }
+    posts { id page { id } }
+    events { id pagesConnection(first: 1) { nodes { id } } }
+    collections { id legacyAlbum }
   }
 }
 """.strip()
@@ -84,7 +91,7 @@ query GetMediaDownloads($mediaIds: [ID!]!) {
     id
     originalFileName
     type
-    watermark: downloadUrl(format: WEB)
+    watermark
     webDownloadUrl: downloadUrl(format: WEB)
     originalDownloadUrl: downloadUrl(format: ORIGINAL)
     printDownloadUrl: downloadUrl(format: PRINT)

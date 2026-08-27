@@ -167,13 +167,16 @@ class GraphQLClient:
                     time.sleep(self.backoff * (2**attempt))
         raise GraphQLHTTPError(str(last or "GraphQL request failed")) from last
 
-    def get_viewer(self) -> Viewer:
-        raw = self.execute(GET_VIEWER, operation_name="GetViewer").get("viewer")
+    def get_viewer(self, space_id: str | None = None) -> Viewer:
+        raw = self.execute(
+            GET_VIEWER, {"spaceId": space_id}, operation_name="GetViewer"
+        ).get("viewer")
         if not isinstance(raw, Mapping) or not raw.get("id"):
             raise GraphQLHTTPError("GetViewer returned no viewer")
-        relationships = raw.get("relationships") or ()
-        if not isinstance(relationships, Sequence) or isinstance(relationships, (str, bytes)):
-            relationships = ()
+        connection = raw.get("relationshipsConnection")
+        relationships = _items(
+            connection.get("edges") if isinstance(connection, Mapping) else None
+        )
         return Viewer(
             id=str(raw["id"]),
             relationships=tuple(x for x in relationships if isinstance(x, Mapping)),
@@ -197,7 +200,6 @@ class GraphQLClient:
         user_id: str,
         *,
         first: int = 100,
-        format: str = "IMAGE",
         order_by: str = "CAPTURED_AT_DESC",
     ) -> list[str]:
         return [
@@ -209,12 +211,7 @@ class GraphQLClient:
                 "taggedMediaConnection",
                 {
                     "userId": user_id,
-                    "format": format,
                     "orderBy": order_by,
-                    "savedMedia": False,
-                    "taggedMedia": True,
-                    "uploadsMedia": False,
-                    "workMedia": False,
                 },
                 first,
             )
@@ -239,15 +236,31 @@ class GraphQLClient:
             memberships: list[ContainerMembership] = []
             for post in _items(media.get("posts")):
                 page = post.get("page") if isinstance(post, Mapping) else None
-                if isinstance(page, Mapping) and page.get("id"):
+                if isinstance(post, Mapping) and post.get("id"):
+                    page_id = (
+                        str(page["id"])
+                        if isinstance(page, Mapping) and page.get("id")
+                        else None
+                    )
                     memberships.append(
                         ContainerMembership(
-                            id=str(page["id"]),
+                            id=str(post["id"]),
                             media_id=media_id,
-                            container_id=_string(post.get("id")),
-                            container_type="page",
+                            container_id=str(post["id"]),
+                            container_type="post",
+                            parent_page_id=page_id,
                         )
                     )
+                    if page_id:
+                        memberships.append(
+                            ContainerMembership(
+                                id=page_id,
+                                media_id=media_id,
+                                container_id=page_id,
+                                container_type="page",
+                                parent_page_id=page_id,
+                            )
+                        )
             for event in _items(media.get("events")):
                 if not isinstance(event, Mapping) or not event.get("id"):
                     continue
@@ -260,6 +273,7 @@ class GraphQLClient:
                                 media_id=media_id,
                                 container_id=str(event["id"]),
                                 container_type="event",
+                                parent_page_id=str(page["id"]),
                             )
                         )
             for collection in _items(media.get("collections")):
