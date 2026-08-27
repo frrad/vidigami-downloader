@@ -56,6 +56,31 @@ def test_download_is_atomic_and_returns_hash(tmp_path: Path) -> None:
     assert list(tmp_path.glob("*.part")) == []
 
 
+def test_download_sends_transient_auth_headers_without_repr_secrets(tmp_path: Path) -> None:
+    body = b"authenticated image bytes"
+    signed_url = "https://cdn.example.invalid/signed?token=synthetic-secret"
+    request_item = DownloadRequest(
+        "media|synthetic-auth",
+        signed_url,
+        headers={
+            "Authorization": "Bearer synthetic-access",
+            "Organization-Id": "org|synthetic",
+            "Space-Id": "space|synthetic",
+        },
+    )
+
+    def opener(request: Request, timeout: float) -> FakeResponse:
+        assert request.get_header("Authorization") == "Bearer synthetic-access"
+        assert request.get_header("Organization-id") == "org|synthetic"
+        assert request.get_header("Space-id") == "space|synthetic"
+        return FakeResponse(body, len(body))
+
+    download_media(request_item, tmp_path, opener=opener)
+    representation = repr(request_item)
+    assert signed_url not in representation
+    assert "synthetic-access" not in representation
+
+
 def test_incomplete_download_is_removed(tmp_path: Path) -> None:
     def opener(request: Request, timeout: float) -> FakeResponse:
         return FakeResponse(b"short", 100)

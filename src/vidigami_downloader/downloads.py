@@ -10,8 +10,8 @@ import hashlib
 import os
 import re
 import tempfile
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO, Protocol, cast
 from urllib.error import HTTPError, URLError
@@ -44,8 +44,12 @@ class DownloadRequest:
     """Everything needed to download one media object."""
 
     media_id: str
-    url: str
+    # Signed URLs and bearer headers are request-only secrets.  They are kept
+    # off the dataclass representation so an incidental assertion or log line
+    # cannot disclose them.
+    url: str = field(repr=False)
     original_filename: str | None = None
+    headers: Mapping[str, str] = field(default_factory=dict, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,7 +102,8 @@ def download_media(
     open_url = opener or _open_url
     temporary_path: Path | None = None
     try:
-        request = Request(item.url, headers={"Accept": "*/*"}, method="GET")
+        request_headers = {"Accept": "*/*", **dict(item.headers)}
+        request = Request(item.url, headers=request_headers, method="GET")
         with open_url(request, timeout) as response:
             expected = _content_length(response.headers)
             with tempfile.NamedTemporaryFile(

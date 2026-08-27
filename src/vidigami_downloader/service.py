@@ -137,7 +137,12 @@ def _download_selected(
             destination = config.storage.archive_directory
             was_present = (destination / _archive_name(item.media.media_id, filename)).exists()
             outcome = download_media(
-                DownloadRequest(item.media.media_id, option.url, _as_string(filename)),
+                DownloadRequest(
+                    item.media.media_id,
+                    option.url,
+                    _as_string(filename),
+                    headers=_download_headers(api),
+                ),
                 destination,
                 timeout=config.network.request_timeout_seconds,
             )
@@ -164,6 +169,23 @@ def _download_selected(
                 last_error="Download failed",
             )
     return DownloadSummary(attempted, completed, reused, failed)
+
+
+def _download_headers(api: GraphQLClient) -> Mapping[str, str]:
+    """Get transient media-request headers without persisting or displaying them.
+
+    The fallback keeps the small fake API objects used by callers/tests
+    compatible; the production ``GraphQLClient`` always supplies auth and
+    organization/space context.
+    """
+
+    provider = getattr(api, "request_headers", None)
+    if not callable(provider):
+        provider = getattr(api, "download_headers", None)
+    if not callable(provider):
+        return {}
+    headers = provider()
+    return dict(headers) if isinstance(headers, Mapping) else {}
 
 
 def _choose_download_option(
