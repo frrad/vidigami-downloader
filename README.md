@@ -1,36 +1,48 @@
 # Vidigami Downloader
 
-Vidigami Downloader is a privacy-first, local command-line tool for downloading
-media that a user is authorized to access and for preserving the media's
-relationships over time.
+An unofficial, privacy-first command-line archive tool for media you are
+authorized to access in Vidigami.
 
-The project records opaque Vidigami IDs for page/container membership and
-person tags. Selection is derived from the current configuration at sync time;
-changing a page or tagged-user filter does not rewrite historical metadata.
+It uses Vidigami's current OAuth/OIDC and GraphQL surface—without browser
+automation, browser-profile access, or cookie scraping. The API is undocumented
+and may change.
 
-## Status
+## What it selects
 
-This repository is an early scaffold. Authentication, API enumeration, and
-download behavior are being implemented incrementally. The command names are
-available so that integrations and documentation can be developed against a
-stable CLI surface.
+Each sync takes the union of:
 
-## Privacy
+- every media item found in the configured page IDs, including untagged media;
+- every media item tagged with any configured user ID, even outside those pages.
 
-Credentials, local configuration, databases, downloaded media, metadata,
-reports, logs, and local privacy patterns are intentionally ignored by Git.
-Use [`config.example.toml`](config.example.toml) as a synthetic template and
-copy it to the ignored `config.toml` file for local use. Do not commit real
-organization, page, user, or account information.
+The SQLite state remains canonical rather than baking in that filter. For each
+media item it records actual container/page IDs and face-tag ID plus tagged-user
+ID pairs, with observation timestamps. Reports derive the current selection from
+those IDs, so changing the configured pages or tagged users does not rewrite the
+underlying metadata.
 
-Before committing, run:
+Google Photos upload is intentionally out of scope. The archive directory is
+ordinary local files that another tool can import.
+
+## Privacy model
+
+The public repository contains code and synthetic examples only. Git ignores:
+
+- `config.toml` and other local configuration;
+- credentials, tokens, and local privacy patterns;
+- SQLite state, downloaded media, reports, metadata, and logs.
+
+Tokens are stored in the operating-system keychain. Downloads use hashed local
+filenames, and signed download URLs are neither stored nor printed. Reports
+contain opaque IDs, not names, email addresses, or URLs.
+
+Before every commit, run:
 
 ```console
 python scripts/privacy_check.py
 ```
 
-The check scans tracked files and staged candidate files using patterns from
-the ignored `.privacy-patterns` file when present.
+For extra local protection, create an ignored `.privacy-patterns` file with one
+regular expression per private value or pattern to reject.
 
 ## Installation
 
@@ -40,23 +52,61 @@ Python 3.12 or newer is required.
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
+cp config.example.toml config.toml
 ```
 
-## CLI scaffold
+Edit only the ignored `config.toml`. Use opaque Vidigami IDs, not display names.
+The production OAuth client currently uses `client_secret_basic`; if the
+provider requires it, put the authorized client secret only in local config.
+
+## Usage
 
 ```console
+vidigami doctor
 vidigami auth login
 vidigami auth status
 vidigami relationships
-vidigami doctor
 vidigami sync --dry-run
+vidigami sync
 vidigami status
 vidigami report
 vidigami verify
 ```
 
-The current scaffold reports that these operations are not yet implemented.
-It does not access an account or network service.
+`auth login` opens the system browser for a normal OAuth Authorization Code +
+PKCE login and listens only on the configured loopback callback. It does not
+drive the browser. Subsequent scheduled runs use refresh tokens from the OS
+keychain when the provider issues one.
+
+`sync` first completes page and tagged-user enumeration, reconciles normalized
+ID observations in SQLite, then atomically downloads the selected union. A
+temporary file is checksummed and fsynced before rename. Re-running is
+idempotent and verifies/reuses existing archive files.
+
+## Development and CI
+
+```console
+ruff check .
+mypy src
+python scripts/privacy_check.py
+pytest
+```
+
+GitHub Actions runs all four checks on pushes and pull requests, using Python
+3.12 and strict mypy settings.
+
+## Prior art
+
+[`cytocracy/vidigami`](https://github.com/cytocracy/vidigami) demonstrated a
+legacy cookie-and-CDN approach in 2023. This project does not reuse its exposed
+cookie pattern or URL construction; it targets the current bearer-authenticated
+GraphQL API and asks Vidigami for fresh download URLs.
+
+## Responsible use
+
+Use this only with an account and media you are authorized to access. Keep the
+archive private, respect the school's policies and Vidigami's terms, and avoid
+aggressive request rates.
 
 ## License
 

@@ -4,6 +4,8 @@
 [vidigami]
 organization_id = "org|example-001"
 space_id = "space|example-001"
+# Optional route slug, only needed when the API requires x-org-identifier.
+# organization_identifier = "example-school"
 page_ids = ["page|example-001"]
 tagged_user_ids = ["user|example-001"]
 include_shared_collections = true
@@ -19,3 +21,13 @@ reports_directory = "reports"
 request_timeout_seconds = 30
 max_retries = 3
 concurrency = 4
+
+[auth]
+# The production public client is the default. Keep any client secret only in
+# ignored config.toml (or omit it when the provider permits public clients).
+client_id = "vidigami_production"
+# client_secret = ""
+authorization_endpoint = "https://accounts.vidigami.com/oauth2/authorize"
+token_endpoint = "https://accounts.vidigami.com/oauth2/token"
+redirect_uri = "http://127.0.0.1:8765/callback"
+token_auth_method = "client_secret_basic"
