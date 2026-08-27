@@ -101,7 +101,7 @@ is available. The command neither contacts Vidigami nor redownloads files.
 ## Scheduling on macOS
 
 For periodic unattended runs, use the included launchd setup. It installs a
-per-user agent that runs daily at 03:15 local time, and once at login after a
+per-user agent that runs daily at 18:15 local time, and once at login after a
 shutdown or missed run. Each invocation runs from the repository root and
 executes `sync`, `report --format both`, and `verify` in a fail-fast sequence.
 The generated plist contains your local repository path and lives outside this

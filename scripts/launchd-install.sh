@@ -45,4 +45,4 @@ function xml_escape(value, result, char, position) {
 
 launchctl bootout "gui/$(id -u)" "$destination" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$destination"
-echo "Installed and loaded $destination (daily at 03:15 local time and at login)."
+echo "Installed and loaded $destination (daily at 18:15 local time and at login)."
