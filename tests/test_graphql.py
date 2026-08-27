@@ -41,7 +41,13 @@ def test_page_media_paginates_and_sends_collection_flag():
             },
         ]
     )
-    client = GraphQLClient("synthetic-access", transport=transport, backoff=0)
+    client = GraphQLClient(
+        "synthetic-access",
+        transport=transport,
+        backoff=0,
+        organization_id="org-1",
+        space_id="space-1",
+    )
 
     assert client.get_page_media_ids("page-1", first=1) == ["media-1", "media-2"]
     assert transport.calls[0][1] == {
@@ -52,6 +58,22 @@ def test_page_media_paginates_and_sends_collection_flag():
     }
     assert transport.calls[1][1]["after"] == "cursor-1"
     assert transport.calls[0][2]["Authorization"] == "Bearer synthetic-access"
+    assert transport.calls[0][2]["Organization-Id"] == "org-1"
+    assert transport.calls[0][2]["Space-Id"] == "space-1"
+
+
+def test_org_identifier_is_used_until_canonical_org_id_is_known():
+    transport = FakeTransport(
+        [{"data": {"viewer": {"id": "viewer-1", "relationshipsConnection": {"edges": []}}}}]
+    )
+    client = GraphQLClient(
+        "synthetic-access",
+        transport=transport,
+        organization_identifier="example-school",
+    )
+    assert client.get_viewer().id == "viewer-1"
+    assert transport.calls[0][2]["x-org-identifier"] == "example-school"
+    assert "Organization-Id" not in transport.calls[0][2]
 
 
 def test_tagged_media_sets_current_connection_arguments():

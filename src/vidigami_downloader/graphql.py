@@ -89,6 +89,9 @@ class GraphQLClient:
         timeout: float = 30.0,
         retries: int = 3,
         backoff: float = 0.25,
+        organization_id: str | None = None,
+        organization_identifier: str | None = None,
+        space_id: str | None = None,
         transport: Transport | None = None,
     ) -> None:
         self._access_token = access_token
@@ -96,6 +99,9 @@ class GraphQLClient:
         self.timeout = timeout
         self.retries = max(0, retries)
         self.backoff = max(0.0, backoff)
+        self.organization_id = organization_id
+        self.organization_identifier = organization_identifier
+        self.space_id = space_id
         self._transport = transport or self._http_transport
 
     def _token(self) -> str:
@@ -144,6 +150,12 @@ class GraphQLClient:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self._token()}",
         }
+        if self.organization_id:
+            headers["Organization-Id"] = self.organization_id
+        elif self.organization_identifier:
+            headers["x-org-identifier"] = self.organization_identifier
+        if self.space_id:
+            headers["Space-Id"] = self.space_id
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
