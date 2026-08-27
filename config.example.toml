@@ -1,0 +1,21 @@
+# Copy this file to config.toml and replace the opaque IDs locally.
+# Keep config.toml out of version control. Do not put names or email addresses here.
+
+[vidigami]
+organization_id = "org|example-001"
+space_id = "space|example-001"
+page_ids = ["page|example-001"]
+tagged_user_ids = ["user|example-001"]
+include_shared_collections = true
+download_quality = "original"
+media_types = ["IMAGE", "VIDEO"]
+
+[storage]
+database_path = "state/vidigami.sqlite3"
+archive_directory = "archive"
+reports_directory = "reports"
+
+[network]
+request_timeout_seconds = 30
+max_retries = 3
+concurrency = 4

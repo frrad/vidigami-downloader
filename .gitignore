@@ -1,0 +1,51 @@
+# Local configuration and credentials
+config.toml
+*.local.toml
+.privacy-patterns
+.env
+.env.*
+!.env.example
+*.token
+*.tokens
+*.secret
+*.secrets
+
+# Local application state
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+state/
+data/
+archive/
+downloads/
+media/
+metadata/
+reports/
+logs/
+*.log
+
+# Generated output
+report-*.json
+report-*.csv
+*.jsonl
+coverage.xml
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Python tooling
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/
