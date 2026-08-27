@@ -63,7 +63,17 @@ def _media_record(api: object, media_id: str) -> MediaRecord:
 
 
 def _media_from_mapping(media_id: str, raw: Mapping[str, Any]) -> MediaRecord:
-    captured = raw.get("capturedAt") or raw.get("createdAt")
+    # ``createdAt`` is the provider's record/upload timestamp, not a camera
+    # capture time.  Only an explicitly named capture field may populate the
+    # canonical capture timestamp; local EXIF extraction is the normal source.
+    captured = raw.get("capturedAt")
+    # Do not persist arbitrary API fields here.  Fallback mappings can come
+    # from a download response containing signed URLs or other credentials;
+    # the only upstream value intentionally retained is the non-secret
+    # creation timestamp under an explicit provenance key.
+    metadata: dict[str, Any] = {}
+    if raw.get("createdAt") is not None:
+        metadata["upstream_created_at"] = raw["createdAt"]
     return MediaRecord(
         media_id=str(raw.get("id") or media_id),
         media_type=_string(raw.get("type")),
@@ -72,13 +82,7 @@ def _media_from_mapping(media_id: str, raw: Mapping[str, Any]) -> MediaRecord:
         width=_integer(raw.get("width")),
         height=_integer(raw.get("height")),
         captured_at=captured,
-        metadata={
-            str(key): value for key, value in raw.items()
-            if key not in {
-                "id", "type", "mimeType", "filename", "originalFileName",
-                "width", "height", "capturedAt", "createdAt",
-            }
-        },
+        metadata=metadata,
     )
 
 

@@ -15,6 +15,7 @@ from .config import AppConfig, load_config
 from .graphql import GraphQLError, GraphQLHTTPError
 from .reporting import rows_from_snapshot, write_csv, write_json
 from .service import (
+    backfill_local_metadata,
     criteria_for,
     graph_client,
     oauth_client,
@@ -246,6 +247,30 @@ def verify(config_path: ConfigOption = None) -> None:
         store.close()
     typer.echo(json.dumps({"checked": checked, "valid": valid, "invalid": invalid}, sort_keys=True))
     if invalid:
+        raise typer.Exit(1)
+
+
+@app.command("metadata")
+def metadata(config_path: ConfigOption = None) -> None:
+    """Backfill technical metadata from completed local originals only."""
+    config = _load(config_path)
+    store = open_store(config)
+    try:
+        summary = backfill_local_metadata(store)
+    finally:
+        store.close()
+    typer.echo(
+        json.dumps(
+            {
+                "inspected": summary.inspected,
+                "updated": summary.updated,
+                "missing": summary.missing,
+                "failed": summary.failed,
+            },
+            sort_keys=True,
+        )
+    )
+    if summary.failed:
         raise typer.Exit(1)
 
 

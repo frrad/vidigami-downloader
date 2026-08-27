@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .metadata import LocalMediaMetadata
 from .models import ContainerMembership, MediaRecord, TagMembership, as_datetime, utc_now
 
 
@@ -17,6 +18,10 @@ def _ts(value: datetime | str | None = None) -> str:
     value = utc_now() if value is None else value
     if isinstance(value, str):
         return value
+    if value.tzinfo is None:
+        # EXIF timestamps often omit timezone information.  Preserve the
+        # wall-clock value rather than fabricating UTC or local-machine time.
+        return value.isoformat()
     return value.astimezone(UTC).isoformat()
 
 
@@ -366,3 +371,39 @@ class StateStore:
             (media_id, *fields.values()),
         )
         self.connection.commit()
+
+    def update_local_metadata(self, media_id: str, metadata: LocalMediaMetadata) -> bool:
+        """Persist safe technical facts extracted from a completed local file.
+
+        ``None`` values do not overwrite facts already known from another
+        source, including a capture time.  The operation is idempotent and
+        commits as one small transaction.
+        """
+
+        row = self.connection.execute(
+            "SELECT mime_type,width,height,captured_at FROM media WHERE media_id=?",
+            (media_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        values: dict[str, object] = {
+            "mime_type": metadata.mime_type,
+            "width": metadata.width,
+            "height": metadata.height,
+            "captured_at": _ts(metadata.captured_at) if metadata.captured_at else None,
+        }
+        assignments: list[str] = []
+        parameters: list[object] = []
+        for field in ("mime_type", "width", "height", "captured_at"):
+            if row[field] is None and values[field] is not None:
+                assignments.append(f"{field}=?")
+                parameters.append(values[field])
+        if not assignments:
+            return False
+        parameters.append(media_id)
+        self.connection.execute(
+            f"UPDATE media SET {','.join(assignments)} WHERE media_id=?",
+            parameters,
+        )
+        self.connection.commit()
+        return True

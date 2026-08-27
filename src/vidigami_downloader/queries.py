@@ -89,9 +89,12 @@ GET_MEDIA_DOWNLOADS = """
 query GetMediaDownloads($mediaIds: [ID!]!) {
   media(ids: $mediaIds) {
     id
+    createdAt
+    height
     originalFileName
     type
     watermark
+    width
     webDownloadUrl: downloadUrl(format: WEB)
     originalDownloadUrl: downloadUrl(format: ORIGINAL)
     printDownloadUrl: downloadUrl(format: PRINT)

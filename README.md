@@ -74,6 +74,7 @@ vidigami sync
 vidigami status
 vidigami report
 vidigami verify
+vidigami metadata
 ```
 
 `auth login` uses Vidigami's direct HTML sign-in flow and prompts for the
@@ -88,6 +89,14 @@ provider issues one.
 ID observations in SQLite, then atomically downloads the selected union. A
 temporary file is checksummed and fsynced before rename. Re-running is
 idempotent and verifies/reuses existing archive files.
+
+`metadata` is a local-only, idempotent backfill for completed downloads. It
+uses the original file bytes to identify MIME type and image dimensions, and
+uses EXIF `DateTimeOriginal` (then `DateTimeDigitized`) for `captured_at`.
+EXIF timestamps without an offset remain timezone-unknown wall-clock values;
+filesystem times and Vidigami `createdAt` are never treated as camera capture
+time. Unsupported formats such as HEIC remain safely unfilled until a decoder
+is available. The command neither contacts Vidigami nor redownloads files.
 
 ## Scheduling on macOS
 

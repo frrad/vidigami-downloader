@@ -179,6 +179,38 @@ def test_batch_hydration_preserves_ids_and_download_urls():
     assert [option.quality for option in downloads["media-1"][1]] == ["original", "web"]
 
 
+def test_media_hydration_preserves_dimensions_and_distinguishes_upstream_created_at():
+    transport = FakeTransport(
+        [
+            {
+                "data": {
+                    "media": [
+                        {
+                            "id": "media-1",
+                            "createdAt": "2024-03-01T10:20:30.000Z",
+                            "height": 1200,
+                            "originalFileName": "photo.jpg",
+                            "type": "IMAGE",
+                            "originalDownloadUrl": "https://download.invalid/original",
+                            "width": 1600,
+                        }
+                    ]
+                }
+            },
+        ]
+    )
+    client = GraphQLClient("synthetic-access", transport=transport, backoff=0)
+
+    media = client.get_media("media-1")
+
+    assert media.width == 1600
+    assert media.height == 1200
+    assert media.metadata == {"upstream_created_at": "2024-03-01T10:20:30.000Z"}
+    assert media.captured_at is None
+    assert len(transport.calls) == 1
+    assert all(field in transport.calls[0][0] for field in ("createdAt", "height", "width"))
+
+
 def test_graphql_errors_are_not_silently_accepted():
     transport = FakeTransport([{"errors": [{"message": "synthetic failure"}]}])
     client = GraphQLClient("synthetic-access", transport=transport, backoff=0)

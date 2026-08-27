@@ -325,11 +325,7 @@ class GraphQLClient:
         ids = [media_ids] if isinstance(media_ids, str) else list(media_ids)
         if not ids:
             return {}
-        raw = self.execute(
-            GET_FACE_TAGS_ON_MEDIA,
-            {"mediaIds": ids, "includeModerated": include_moderated},
-            operation_name="GetFaceTagsOnMedia",
-        ).get("media")
+        raw = self._face_tag_media(ids, include_moderated=include_moderated)
         result: dict[str, list[FaceTag]] = {str(i): [] for i in ids}
         for media in raw if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)) else ():
             if not isinstance(media, Mapping) or not media.get("id"):
@@ -386,7 +382,7 @@ class GraphQLClient:
         if item is None:
             raise GraphQLHTTPError(f"Media {media_id} was not returned")
         raw, _ = item
-        captured = raw.get("capturedAt") or raw.get("createdAt")
+        captured = raw.get("capturedAt")
         try:
             captured_at = (
                 datetime.fromisoformat(str(captured).replace("Z", "+00:00")) if captured else None
@@ -397,8 +393,24 @@ class GraphQLClient:
             media_id=media_id,
             media_type=_string(raw.get("type")),
             filename=_string(raw.get("originalFileName")),
+            width=_integer(raw.get("width")),
+            height=_integer(raw.get("height")),
             captured_at=captured_at,
+            metadata=(
+                {"upstream_created_at": _string(raw.get("createdAt"))}
+                if raw.get("createdAt") is not None
+                else {}
+            ),
         )
+
+    def _face_tag_media(
+        self, ids: Sequence[str], *, include_moderated: bool
+    ) -> Any:
+        return self.execute(
+            GET_FACE_TAGS_ON_MEDIA,
+            {"mediaIds": list(ids), "includeModerated": include_moderated},
+            operation_name="GetFaceTagsOnMedia",
+        ).get("media")
 
     def get_media_containers(self, media_id: str) -> list[Any]:
         from .models import ContainerMembership as StateContainerMembership
@@ -470,6 +482,15 @@ class _RetryableHTTPError(GraphQLHTTPError):
 
 def _string(value: Any) -> str | None:
     return str(value) if value is not None else None
+
+
+def _integer(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _items(value: Any) -> list[Any]:

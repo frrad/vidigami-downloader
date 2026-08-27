@@ -5,7 +5,7 @@ from vidigami_downloader.models import (
     TagMembership,
 )
 from vidigami_downloader.state import StateStore
-from vidigami_downloader.sync import SyncEngine
+from vidigami_downloader.sync import SyncEngine, _media_from_mapping
 
 
 class FakeAPI:
@@ -69,3 +69,20 @@ def test_dry_run_does_not_write_state():
     assert result.candidate_count == 2
     assert store.snapshot().media == ()
     assert store.connection.execute("SELECT COUNT(*) FROM sync_runs").fetchone()[0] == 0
+
+
+def test_mapping_hydration_does_not_mislabel_upstream_creation_as_capture_time():
+    media = _media_from_mapping(
+        "m1",
+        {
+            "id": "m1",
+            "type": "IMAGE",
+            "createdAt": "2024-03-01T10:20:30.000Z",
+            "width": 1600,
+            "height": 1200,
+            "originalDownloadUrl": "https://cdn.invalid/file?token=synthetic-secret",
+            "accessToken": "synthetic-access-token",
+        },
+    )
+    assert media.captured_at is None
+    assert media.metadata == {"upstream_created_at": "2024-03-01T10:20:30.000Z"}

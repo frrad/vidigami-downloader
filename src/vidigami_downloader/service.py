@@ -17,6 +17,7 @@ from .auth import OAuthClient, OAuthConfig
 from .config import AppConfig
 from .downloads import DownloadError, DownloadRequest, download_media, hash_file
 from .graphql import DownloadOption, GraphQLClient
+from .metadata import extract_local_metadata
 from .models import SelectedMedia, SelectionCriteria, SyncResult
 from .selectors import select_from_state
 from .state import StateStore
@@ -28,6 +29,16 @@ class DownloadSummary:
     attempted: int
     completed: int
     reused: int
+    failed: int
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataSummary:
+    """Counts from a local metadata backfill (no paths or personal values)."""
+
+    inspected: int
+    updated: int
+    missing: int
     failed: int
 
 
@@ -156,6 +167,15 @@ def _download_selected(
                 completed_at=datetime.now(UTC).isoformat(),
                 last_error=None,
             )
+            # Metadata extraction is local and best-effort.  A download stays
+            # complete even when its format has no Pillow support (for example
+            # HEIC); a later ``metadata`` backfill can retry it.
+            try:
+                store.update_local_metadata(
+                    item.media.media_id, extract_local_metadata(outcome.path)
+                )
+            except (OSError, TypeError, ValueError):
+                pass
             completed += 1
             reused += int(was_present)
         except (DownloadError, OSError, ValueError):
@@ -169,6 +189,41 @@ def _download_selected(
                 last_error="Download failed",
             )
     return DownloadSummary(attempted, completed, reused, failed)
+
+
+def backfill_local_metadata(store: StateStore) -> MetadataSummary:
+    """Fill missing media metadata from existing completed downloads.
+
+    This never contacts Vidigami or downloads anything.  It only examines
+    rows whose download status is ``complete`` and is safe to run repeatedly.
+    Paths and extraction exceptions are deliberately omitted from the result.
+    """
+
+    rows = store.connection.execute(
+        "SELECT media_id, local_path FROM downloads WHERE status='complete'"
+    ).fetchall()
+    inspected = updated = missing = failed = 0
+    for row in rows:
+        inspected += 1
+        path = Path(row["local_path"]) if row["local_path"] else None
+        if path is None or not path.is_file():
+            missing += 1
+            continue
+        try:
+            metadata = extract_local_metadata(path)
+            if any(
+                value is not None
+                for value in (
+                    metadata.mime_type,
+                    metadata.width,
+                    metadata.height,
+                    metadata.captured_at,
+                )
+            ):
+                updated += int(store.update_local_metadata(row["media_id"], metadata))
+        except (OSError, TypeError, ValueError):
+            failed += 1
+    return MetadataSummary(inspected, updated, missing, failed)
 
 
 def _download_headers(api: GraphQLClient) -> Mapping[str, str]:
@@ -235,11 +290,13 @@ def _as_string(value: object) -> str | None:
 
 __all__ = [
     "DownloadSummary",
+    "MetadataSummary",
     "SyncSummary",
     "criteria_for",
     "graph_client",
     "oauth_client",
     "open_store",
     "run_sync",
+    "backfill_local_metadata",
     "verify_downloads",
 ]
