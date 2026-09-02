@@ -69,6 +69,7 @@ vidigami doctor
 vidigami auth login
 vidigami auth status
 vidigami relationships
+vidigami pages
 vidigami sync --dry-run
 vidigami sync
 vidigami status
@@ -89,6 +90,13 @@ provider issues one.
 ID observations in SQLite, then atomically downloads the selected union. A
 temporary file is checksummed and fsynced before rename. Re-running is
 idempotent and verifies/reuses existing archive files.
+
+`pages` lists every page in the configured `space_id` using the GraphQL API.
+Its JSON output contains each page's opaque ID and display name, for example
+`{"pages":[{"id":"page|example","name":"Example Page"}]}`. Names are
+returned only by this explicit listing command and are not stored in
+configuration, SQLite state, or reports. The command follows API cursors until
+the complete list is returned.
 
 `metadata` is a local-only, idempotent backfill for completed downloads. It
 uses the original file bytes to identify MIME type and image dimensions, and
