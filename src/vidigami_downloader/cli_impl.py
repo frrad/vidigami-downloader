@@ -106,7 +106,7 @@ def relationships(config_path: ConfigOption = None) -> None:
 
 @app.command()
 def pages(config_path: ConfigOption = None) -> None:
-    """List accessible page IDs without exposing page names."""
+    """List accessible page IDs and names."""
     config = _load(config_path)
     try:
         page_results = graph_client(config).get_pages(config.vidigami.space_id or None)
@@ -114,7 +114,12 @@ def pages(config_path: ConfigOption = None) -> None:
         _error(_safe_error(exc, "Could not enumerate Vidigami pages"))
     typer.echo(
         json.dumps(
-            {"page_ids": [page.id for page in page_results]},
+            {
+                "pages": [
+                    {"id": page.id, "name": page.name}
+                    for page in page_results
+                ]
+            },
             sort_keys=True,
         )
     )

@@ -88,27 +88,34 @@ def test_relationships_emits_only_opaque_ids(monkeypatch: Any, tmp_path: Path) -
     assert "@example.invalid" not in result.output
 
 
-def test_pages_emits_only_opaque_ids(monkeypatch: Any, tmp_path: Path) -> None:
+def test_pages_emits_ids_and_names_with_json_escaping(monkeypatch: Any, tmp_path: Path) -> None:
     config_path = _write_config(tmp_path / "config.toml", tmp_path / "state.sqlite3")
 
     class FakeGraph:
         def get_pages(self, space_id: str):
             assert space_id == "space|synthetic"
             return (
-                Page(id="page|one", name="Private Page Name"),
-                Page(id="page|two", name="Another Private Page"),
+                Page(id="page|one", name='Synthetic "Primary" Page'),
+                Page(id="page|two", name="Synthetic\nSecond Page"),
+                Page(id="page|three", name=None),
             )
 
     monkeypatch.setattr(cli_impl, "graph_client", lambda config: FakeGraph())
     result = runner.invoke(app, ["pages", "--config", str(config_path)])
 
     assert result.exit_code == 0
-    assert json.loads(result.stdout) == {"page_ids": ["page|one", "page|two"]}
-    assert "Private Page Name" not in result.output
-    assert "Another Private Page" not in result.output
+    assert json.loads(result.stdout) == {
+        "pages": [
+            {"id": "page|one", "name": 'Synthetic "Primary" Page'},
+            {"id": "page|two", "name": "Synthetic\nSecond Page"},
+            {"id": "page|three", "name": None},
+        ]
+    }
+    assert 'Synthetic \\"Primary\\" Page' in result.stdout
+    assert "Synthetic\\nSecond Page" in result.stdout
 
 
-def test_pages_reports_api_errors_without_names(monkeypatch: Any, tmp_path: Path) -> None:
+def test_pages_reports_api_errors(monkeypatch: Any, tmp_path: Path) -> None:
     config_path = _write_config(tmp_path / "config.toml", tmp_path / "state.sqlite3")
 
     class FakeGraph:

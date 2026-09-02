@@ -51,8 +51,8 @@ class Viewer:
 class Page:
     """A page returned by the Vidigami pages connection.
 
-    ``name`` is retained for typed API callers, but presentation layers should
-    avoid printing it because page names can identify people or communities.
+    ``name`` is display metadata and may identify people or communities. Callers
+    should avoid persisting it unless they explicitly need it.
     """
 
     id: str
