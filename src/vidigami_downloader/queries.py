@@ -16,6 +16,17 @@ query GetViewer($spaceId: ID) {
 }
 """.strip()
 
+GET_PAGES = """
+query GetPages($spaceId: ID!, $first: Int!, $after: String) {
+  space(id: $spaceId) {
+    pagesConnection(first: $first, after: $after) {
+      nodes { id name }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+""".strip()
+
 GET_PAGE_MEDIA_IDS = """
 query GetPageMediaIds($pageId: ID!, $first: Int!, $after: String, $includeCollections: Boolean!) {
   page(id: $pageId) {
@@ -105,6 +116,7 @@ query GetMediaDownloads($mediaIds: [ID!]!) {
 
 __all__ = [
     "GET_VIEWER",
+    "GET_PAGES",
     "GET_PAGE_MEDIA_IDS",
     "GET_USER_MEDIA",
     "GET_LIGHTBOX_MEDIA_CONTAINERS",

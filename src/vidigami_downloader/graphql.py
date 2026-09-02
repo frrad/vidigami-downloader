@@ -21,6 +21,7 @@ from .queries import (
     GET_LIGHTBOX_MEDIA_CONTAINERS,
     GET_MEDIA_DOWNLOADS,
     GET_PAGE_MEDIA_IDS,
+    GET_PAGES,
     GET_USER_MEDIA,
     GET_VIEWER,
 )
@@ -44,6 +45,18 @@ class GraphQLHTTPError(RuntimeError):
 class Viewer:
     id: str
     relationships: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True)
+class Page:
+    """A page returned by the Vidigami pages connection.
+
+    ``name`` is retained for typed API callers, but presentation layers should
+    avoid printing it because page names can identify people or communities.
+    """
+
+    id: str
+    name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -198,6 +211,7 @@ class GraphQLClient:
         raise GraphQLHTTPError(str(last or "GraphQL request failed")) from last
 
     def get_viewer(self, space_id: str | None = None) -> Viewer:
+        self._reject_space_id_conflict(space_id)
         raw = self.execute(
             GET_VIEWER, {"spaceId": space_id}, operation_name="GetViewer"
         ).get("viewer")
@@ -211,6 +225,45 @@ class GraphQLClient:
             id=str(raw["id"]),
             relationships=tuple(x for x in relationships if isinstance(x, Mapping)),
         )
+
+    def get_pages(self, space_id: str | None = None, *, first: int = 100) -> list[Page]:
+        """Return every page in a space, following the connection cursors.
+
+        A space ID may be supplied for one-off calls; when omitted, the ID
+        configured on this client is used.  Requiring one of those two values
+        avoids accidentally querying an ambiguous or unrelated space.
+        """
+
+        resolved_space_id = self._resolve_space_id(space_id)
+        values = self._paginate(
+            GET_PAGES,
+            "GetPages",
+            "space",
+            "pagesConnection",
+            {"spaceId": resolved_space_id},
+            first,
+            strict=True,
+        )
+        return [
+            Page(id=str(value["id"]), name=_string(value.get("name")))
+            for value in values
+            if isinstance(value, Mapping) and value.get("id")
+        ]
+
+    def _resolve_space_id(self, space_id: str | None) -> str:
+        self._reject_space_id_conflict(space_id)
+        resolved_space_id = self.space_id if space_id is None else space_id
+        if not resolved_space_id:
+            raise GraphQLHTTPError(
+                "A space_id is required; configure one or pass space_id explicitly"
+            )
+        return resolved_space_id
+
+    def _reject_space_id_conflict(self, space_id: str | None) -> None:
+        if space_id is not None and self.space_id and space_id != self.space_id:
+            raise GraphQLHTTPError(
+                "The requested space_id conflicts with the client's configured Space-Id"
+            )
 
     def get_page_media_ids(self, page_id: str, *, first: int = 100) -> list[str]:
         return [
@@ -442,6 +495,8 @@ class GraphQLClient:
         connection_key: str,
         variables: Mapping[str, Any],
         first: int,
+        *,
+        strict: bool = False,
     ) -> list[Any]:
         if first < 1:
             raise ValueError("first must be positive")
@@ -452,9 +507,13 @@ class GraphQLClient:
             values.update(first=first, after=cursor)
             root = self.execute(query, values, operation_name=operation_name).get(root_key)
             if not isinstance(root, Mapping):
+                if strict:
+                    raise GraphQLHTTPError(f"{operation_name} returned no {root_key}")
                 return result
             connection = root.get(connection_key)
             if not isinstance(connection, Mapping):
+                if strict:
+                    raise GraphQLHTTPError(f"{operation_name} returned no {connection_key}")
                 return result
             edges = connection.get("edges")
             if isinstance(edges, Sequence) and not isinstance(edges, (str, bytes)):
@@ -468,7 +527,16 @@ class GraphQLClient:
             elif isinstance(connection.get("nodes"), Sequence):
                 result.extend(connection["nodes"])
             page_info = connection.get("pageInfo")
-            if not isinstance(page_info, Mapping) or not page_info.get("hasNextPage"):
+            if strict and not isinstance(page_info, Mapping):
+                raise GraphQLHTTPError(f"{operation_name} returned no pageInfo")
+            if not isinstance(page_info, Mapping):
+                return result
+            has_next_page = page_info.get("hasNextPage")
+            if strict and not isinstance(has_next_page, bool):
+                raise GraphQLHTTPError(
+                    f"{operation_name} returned invalid pageInfo.hasNextPage"
+                )
+            if not has_next_page:
                 return result
             next_cursor = page_info.get("endCursor")
             if not next_cursor or next_cursor == cursor:
@@ -509,5 +577,6 @@ __all__ = [
     "GraphQLError",
     "GraphQLHTTPError",
     "MediaRef",
+    "Page",
     "Viewer",
 ]

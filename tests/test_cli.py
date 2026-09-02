@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from vidigami_downloader import cli_impl
 from vidigami_downloader.cli import app
-from vidigami_downloader.graphql import Viewer
+from vidigami_downloader.graphql import GraphQLHTTPError, Page, Viewer
 from vidigami_downloader.models import ContainerMembership, MediaRecord, SyncResult, TagMembership
 from vidigami_downloader.service import DownloadSummary, SyncSummary
 from vidigami_downloader.state import StateStore
@@ -86,6 +86,41 @@ def test_relationships_emits_only_opaque_ids(monkeypatch: Any, tmp_path: Path) -
     }
     assert "Private Person" not in result.output
     assert "@example.invalid" not in result.output
+
+
+def test_pages_emits_only_opaque_ids(monkeypatch: Any, tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path / "config.toml", tmp_path / "state.sqlite3")
+
+    class FakeGraph:
+        def get_pages(self, space_id: str):
+            assert space_id == "space|synthetic"
+            return (
+                Page(id="page|one", name="Private Page Name"),
+                Page(id="page|two", name="Another Private Page"),
+            )
+
+    monkeypatch.setattr(cli_impl, "graph_client", lambda config: FakeGraph())
+    result = runner.invoke(app, ["pages", "--config", str(config_path)])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == {"page_ids": ["page|one", "page|two"]}
+    assert "Private Page Name" not in result.output
+    assert "Another Private Page" not in result.output
+
+
+def test_pages_reports_api_errors_without_names(monkeypatch: Any, tmp_path: Path) -> None:
+    config_path = _write_config(tmp_path / "config.toml", tmp_path / "state.sqlite3")
+
+    class FakeGraph:
+        def get_pages(self, space_id: str):
+            raise GraphQLHTTPError("page enumeration failed")
+
+    monkeypatch.setattr(cli_impl, "graph_client", lambda config: FakeGraph())
+    result = runner.invoke(app, ["pages", "--config", str(config_path)])
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert result.stderr.strip() == "page enumeration failed"
 
 
 def test_sync_dry_run_reports_counts_without_downloads(monkeypatch: Any, tmp_path: Path) -> None:

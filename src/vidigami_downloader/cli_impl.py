@@ -105,6 +105,22 @@ def relationships(config_path: ConfigOption = None) -> None:
 
 
 @app.command()
+def pages(config_path: ConfigOption = None) -> None:
+    """List accessible page IDs without exposing page names."""
+    config = _load(config_path)
+    try:
+        page_results = graph_client(config).get_pages(config.vidigami.space_id or None)
+    except Exception as exc:
+        _error(_safe_error(exc, "Could not enumerate Vidigami pages"))
+    typer.echo(
+        json.dumps(
+            {"page_ids": [page.id for page in page_results]},
+            sort_keys=True,
+        )
+    )
+
+
+@app.command()
 def doctor(config_path: ConfigOption = None) -> None:
     """Check local configuration and dependencies without contacting Vidigami."""
     config = _load(config_path)
