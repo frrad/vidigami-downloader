@@ -86,10 +86,12 @@ redirect. Use `auth login --browser` to try the system-browser loopback flow.
 Subsequent scheduled runs use refresh tokens from the OS keychain when the
 provider issues one.
 
-`sync` first completes page and tagged-user enumeration, reconciles normalized
-ID observations in SQLite, then atomically downloads the selected union. A
-temporary file is checksummed and fsynced before rename. Re-running is
-idempotent and verifies/reuses existing archive files.
+`sync` first completes page and tagged-user enumeration and reconciles those
+source IDs in SQLite. Deep metadata, container, and face-tag hydration is then
+limited to new items and prior hydration failures; successfully hydrated old
+items are not rehydrated on later runs. It then atomically downloads the
+selected union. A temporary file is checksummed and fsynced before rename.
+Re-running is idempotent and verifies/reuses existing archive files.
 
 `pages` lists every page in the configured `space_id` using the GraphQL API.
 Its JSON output contains each page's opaque ID and display name, for example
