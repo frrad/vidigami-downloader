@@ -58,7 +58,8 @@ class StateStore:
                 captured_at TEXT,
                 metadata_json TEXT NOT NULL DEFAULT '{}',
                 first_observed_at TEXT NOT NULL,
-                last_observed_at TEXT NOT NULL
+                last_observed_at TEXT NOT NULL,
+                last_hydrated_at TEXT
             );
             CREATE TABLE IF NOT EXISTS media_containers (
                 media_id TEXT NOT NULL REFERENCES media(media_id),
@@ -107,6 +108,20 @@ class StateStore:
             );
             """
         )
+        # ``last_hydrated_at`` was added after the initial database schema.
+        # Every row created by an older release was deep-hydrated on each sync,
+        # so its last observation is a safe migration baseline.  Backfilling
+        # avoids one unnecessary full-catalog hydration after upgrading.
+        columns = {
+            row["name"]
+            for row in self.connection.execute("PRAGMA table_info(media)").fetchall()
+        }
+        if "last_hydrated_at" not in columns:
+            self.connection.execute("ALTER TABLE media ADD COLUMN last_hydrated_at TEXT")
+            self.connection.execute(
+                """UPDATE media SET last_hydrated_at=last_observed_at
+                   WHERE last_hydrated_at IS NULL"""
+            )
         self.connection.commit()
 
     def begin_sync(self, run_id: str | None = None, at: datetime | None = None) -> str:
@@ -178,6 +193,44 @@ class StateStore:
                 now,
             ),
         )
+
+    def media_needs_hydration(
+        self,
+        media_id: str,
+    ) -> bool:
+        """Return whether a discovered item needs deep API hydration.
+
+        A successful hydration is explicitly marked because an empty
+        container/tag result is valid and cannot be distinguished from an
+        incomplete result by inspecting membership rows alone.  Rows from
+        older schema versions have no marker and are therefore hydrated once.
+        Once marked, an old item remains complete regardless of age.
+        """
+
+        row = self.connection.execute(
+            "SELECT last_hydrated_at FROM media WHERE media_id=?", (media_id,)
+        ).fetchone()
+        return row is None or row["last_hydrated_at"] is None
+
+    def mark_media_hydrated(
+        self, media_id: str, observed_at: datetime | None = None
+    ) -> None:
+        """Record that all deep metadata queries for an item succeeded."""
+
+        self.connection.execute(
+            "UPDATE media SET last_hydrated_at=? WHERE media_id=?",
+            (_ts(observed_at), media_id),
+        )
+
+    def media_has_tag_user(self, media_id: str, user_id: str) -> bool:
+        """Return whether an active tag observation already matches a user."""
+
+        row = self.connection.execute(
+            """SELECT 1 FROM media_tags
+               WHERE media_id=? AND user_id=? AND removed_at IS NULL LIMIT 1""",
+            (media_id, user_id),
+        ).fetchone()
+        return row is not None
 
     def observe_containers(
         self,
@@ -270,16 +323,19 @@ class StateStore:
         if not ids:
             self.connection.execute(
                 """UPDATE media_containers SET removed_at=?
-                   WHERE LOWER(container_type)='page' AND container_id=? AND removed_at IS NULL""",
-                (now, page_id),
+                   WHERE removed_at IS NULL
+                     AND ((LOWER(container_type)='page' AND container_id=?)
+                          OR parent_page_id=?)""",
+                (now, page_id, page_id),
             )
             return
         placeholders = ",".join("?" for _ in ids)
         self.connection.execute(
             f"""UPDATE media_containers SET removed_at=?
-                WHERE LOWER(container_type)='page' AND container_id=?
+                WHERE ((LOWER(container_type)='page' AND container_id=?)
+                       OR parent_page_id=?)
                   AND removed_at IS NULL AND media_id NOT IN ({placeholders})""",
-            (now, page_id, *ids),
+            (now, page_id, page_id, *ids),
         )
 
     def reconcile_tagged_user_discovery(

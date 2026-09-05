@@ -174,22 +174,52 @@ class SyncEngine:
                         savepoint = "media_sync"
                         self.store.connection.execute(f"SAVEPOINT {savepoint}")
                         try:
-                            media = _media_record(self.api, media_id)
-                            containers = list(_containers(self.api, media_id))
-                            containers.extend(
-                                ContainerMembership(
-                                    media_id,
-                                    "PAGE",
-                                    page_id,
-                                    parent_page_id=page_id,
-                                )
-                                for page_id in discovered_page_memberships.get(media_id, ())
+                            needs_hydration = self.store.media_needs_hydration(media_id)
+                            page_memberships = _discovered_page_memberships(
+                                media_id, discovered_page_memberships.get(media_id, ())
                             )
-                            tags = _tags(self.api, media_id)
-                            self.store.upsert_media(media)
-                            self.store.observe_containers(media_id, containers, authoritative=True)
-                            self.store.observe_tags(media_id, tags, authoritative=True)
-                            hydrated += 1
+                            tagged_users = _discovered_tagged_users(
+                                media_id, tagged_discoveries
+                            )
+                            if needs_hydration:
+                                media = _media_record(self.api, media_id)
+                                containers = list(_containers(self.api, media_id))
+                                containers.extend(page_memberships)
+                                tags = list(_tags(self.api, media_id))
+                                # A complete tagged-media enumeration is also
+                                # authoritative evidence.  Keep that evidence
+                                # when the detail query returns no matching
+                                # face tag, while avoiding a duplicate row when
+                                # it does return one.
+                                tags.extend(
+                                    TagMembership(media_id, user_id=user_id)
+                                    for user_id in tagged_users
+                                    if not any(tag.user_id == user_id for tag in tags)
+                                )
+                                self.store.upsert_media(media)
+                                self.store.observe_containers(
+                                    media_id, containers, authoritative=True
+                                )
+                                self.store.observe_tags(media_id, tags, authoritative=True)
+                                self.store.mark_media_hydrated(media_id)
+                                hydrated += 1
+                            else:
+                                # Enumeration still updates direct source
+                                # evidence on the cheap.  This is important
+                                # when an item entered through a tagged-user
+                                # source but its old deep result was empty.
+                                self.store.observe_containers(
+                                    media_id, page_memberships, authoritative=False
+                                )
+                                self.store.observe_tags(
+                                    media_id,
+                                    [
+                                        TagMembership(media_id, user_id=user_id)
+                                        for user_id in tagged_users
+                                        if not self.store.media_has_tag_user(media_id, user_id)
+                                    ],
+                                    authoritative=False,
+                                )
                         except Exception as exc:  # keep one inaccessible item from losing the run
                             self.store.connection.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
                             errors.append(f"{media_id}: {exc}")
@@ -223,6 +253,23 @@ class SyncEngine:
             if not dry_run:
                 self.store.finish_sync(run_id, status="failed", errors=errors)
             raise
+
+
+def _discovered_page_memberships(
+    media_id: str, page_ids: Iterable[str]
+) -> list[ContainerMembership]:
+    return [
+        ContainerMembership(media_id, "PAGE", page_id, parent_page_id=page_id)
+        for page_id in page_ids
+    ]
+
+
+def _discovered_tagged_users(
+    media_id: str, discoveries: Mapping[str, Sequence[str]]
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(user_id for user_id, media_ids in discoveries.items() if media_id in media_ids)
+    )
 
 
 def _string(value: Any) -> str | None:
