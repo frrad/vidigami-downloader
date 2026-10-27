@@ -7,6 +7,8 @@ space_id = "space|example-001"
 # Optional route slug, only needed when the API requires x-org-identifier.
 # organization_identifier = "example-school"
 page_ids = ["page|example-001"]
+# Albums use the opaque event ID embedded in Vidigami album URLs.
+album_ids = ["event|example-001"]
 tagged_user_ids = ["user|example-001"]
 include_shared_collections = true
 download_quality = "original"

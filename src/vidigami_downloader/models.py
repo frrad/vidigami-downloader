@@ -63,14 +63,16 @@ class TagMembership:
 class SelectionCriteria:
     page_ids: frozenset[str] = frozenset()
     tagged_user_ids: frozenset[str] = frozenset()
+    album_ids: frozenset[str] = frozenset()
 
     @classmethod
     def from_values(
         cls,
         page_ids: list[str] | tuple[str, ...] | set[str] = (),
         tagged_user_ids: list[str] | tuple[str, ...] | set[str] = (),
+        album_ids: list[str] | tuple[str, ...] | set[str] = (),
     ) -> SelectionCriteria:
-        return cls(frozenset(page_ids), frozenset(tagged_user_ids))
+        return cls(frozenset(page_ids), frozenset(tagged_user_ids), frozenset(album_ids))
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,10 +80,13 @@ class SelectedMedia:
     media: MediaRecord
     matched_page_ids: tuple[str, ...] = ()
     matched_tag_user_ids: tuple[str, ...] = ()
+    matched_album_ids: tuple[str, ...] = ()
 
     @property
     def selected(self) -> bool:
-        return bool(self.matched_page_ids or self.matched_tag_user_ids)
+        return bool(
+            self.matched_page_ids or self.matched_tag_user_ids or self.matched_album_ids
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,3 +99,4 @@ class SyncResult:
     selected_count: int
     dry_run: bool = False
     errors: tuple[str, ...] = ()
+    album_media_count: int = 0

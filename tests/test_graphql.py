@@ -70,6 +70,43 @@ def test_page_media_paginates_and_sends_collection_flag():
     assert transport.calls[0][2]["Space-Id"] == "space-1"
 
 
+def test_album_media_paginates_the_event_directly():
+    transport = FakeTransport(
+        [
+            {
+                "data": {
+                    "event": {
+                        "mediaConnection": {
+                            "edges": [{"node": {"id": "media-1", "type": "IMAGE"}}],
+                            "pageInfo": {"hasNextPage": True, "endCursor": "cursor-1"},
+                        }
+                    }
+                }
+            },
+            {
+                "data": {
+                    "event": {
+                        "mediaConnection": {
+                            "edges": [{"node": {"id": "media-2", "type": "VIDEO"}}],
+                            "pageInfo": {"hasNextPage": False, "endCursor": "cursor-2"},
+                        }
+                    }
+                }
+            },
+        ]
+    )
+    client = GraphQLClient("synthetic-access", transport=transport, backoff=0)
+
+    assert client.get_album_media_ids("event-1", first=1) == ["media-1", "media-2"]
+    assert transport.calls[0][1] == {
+        "albumId": "event-1",
+        "first": 1,
+        "after": None,
+    }
+    assert transport.calls[1][1]["after"] == "cursor-1"
+    assert "event(id: $albumId)" in transport.calls[0][0]
+
+
 def test_pages_paginates_nodes_and_passes_space_id():
     transport = FakeTransport(
         [

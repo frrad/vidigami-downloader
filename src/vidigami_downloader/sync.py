@@ -21,6 +21,8 @@ class VidigamiAPI(Protocol):
 
     def enumerate_page_media(self, page_id: str) -> Iterable[str]: ...
 
+    def enumerate_album_media(self, album_id: str) -> Iterable[str]: ...
+
     def enumerate_tagged_media(self, user_id: str) -> Iterable[str]: ...
 
     def get_media(self, media_id: str) -> MediaRecord: ...
@@ -42,6 +44,15 @@ def _tagged_media(api: object, user_id: str) -> Iterable[str]:
     if not callable(method):
         raise TypeError("API adapter must provide enumerate_tagged_media or get_user_media")
     return (str(item) for item in method(user_id))
+
+
+def _album_media(api: object, album_id: str) -> Iterable[str]:
+    method = getattr(api, "enumerate_album_media", None) or getattr(
+        api, "get_album_media_ids", None
+    )
+    if not callable(method):
+        raise TypeError("API adapter must provide enumerate_album_media or get_album_media_ids")
+    return (str(item) for item in method(album_id))
 
 
 def _media_record(api: object, media_id: str) -> MediaRecord:
@@ -139,9 +150,12 @@ class SyncEngine:
     def run(self, criteria: SelectionCriteria, *, dry_run: bool = False) -> SyncResult:
         run_id = self.store.begin_sync() if not dry_run else "dry-run"
         page_ids: set[str] = set()
+        album_ids: set[str] = set()
         tagged_ids: set[str] = set()
         discovered_page_memberships: dict[str, set[str]] = {}
+        discovered_album_memberships: dict[str, set[str]] = {}
         page_discoveries: dict[str, list[str]] = {}
+        album_discoveries: dict[str, list[str]] = {}
         tagged_discoveries: dict[str, list[str]] = {}
         errors: list[str] = []
         try:
@@ -154,11 +168,17 @@ class SyncEngine:
                     # media belongs to the selected page.  Keep it even when
                     # the lightbox/container detail query has no page field.
                     discovered_page_memberships.setdefault(media_id, set()).add(page_id)
+            for album_id in criteria.album_ids:
+                discovered = list(_album_media(self.api, album_id))
+                album_discoveries[album_id] = discovered
+                for media_id in discovered:
+                    album_ids.add(media_id)
+                    discovered_album_memberships.setdefault(media_id, set()).add(album_id)
             for user_id in criteria.tagged_user_ids:
                 discovered = list(_tagged_media(self.api, user_id))
                 tagged_discoveries[user_id] = discovered
                 tagged_ids.update(discovered)
-            candidates = page_ids | tagged_ids
+            candidates = page_ids | album_ids | tagged_ids
             hydrated = 0
             if not dry_run:
                 # Enumeration is complete for every configured source before
@@ -167,6 +187,8 @@ class SyncEngine:
                 # result.
                 for page_id, discovered in page_discoveries.items():
                     self.store.reconcile_page_discovery(page_id, discovered)
+                for album_id, discovered in album_discoveries.items():
+                    self.store.reconcile_album_discovery(album_id, discovered)
                 for user_id, discovered in tagged_discoveries.items():
                     self.store.reconcile_tagged_user_discovery(user_id, discovered)
                 with self.store.connection:
@@ -178,6 +200,9 @@ class SyncEngine:
                             page_memberships = _discovered_page_memberships(
                                 media_id, discovered_page_memberships.get(media_id, ())
                             )
+                            album_memberships = _discovered_album_memberships(
+                                media_id, discovered_album_memberships.get(media_id, ())
+                            )
                             tagged_users = _discovered_tagged_users(
                                 media_id, tagged_discoveries
                             )
@@ -185,6 +210,7 @@ class SyncEngine:
                                 media = _media_record(self.api, media_id)
                                 containers = list(_containers(self.api, media_id))
                                 containers.extend(page_memberships)
+                                containers.extend(album_memberships)
                                 tags = list(_tags(self.api, media_id))
                                 # A complete tagged-media enumeration is also
                                 # authoritative evidence.  Keep that evidence
@@ -209,7 +235,9 @@ class SyncEngine:
                                 # when an item entered through a tagged-user
                                 # source but its old deep result was empty.
                                 self.store.observe_containers(
-                                    media_id, page_memberships, authoritative=False
+                                    media_id,
+                                    [*page_memberships, *album_memberships],
+                                    authoritative=False,
                                 )
                                 self.store.observe_tags(
                                     media_id,
@@ -240,14 +268,15 @@ class SyncEngine:
                     status="completed_with_errors" if errors else "completed",
                 )
             return SyncResult(
-                run_id,
-                len(page_ids),
-                len(tagged_ids),
-                len(candidates),
-                hydrated,
-                selected_count,
-                dry_run,
-                tuple(errors),
+                run_id=run_id,
+                page_media_count=len(page_ids),
+                tagged_media_count=len(tagged_ids),
+                candidate_count=len(candidates),
+                hydrated_count=hydrated,
+                selected_count=selected_count,
+                dry_run=dry_run,
+                errors=tuple(errors),
+                album_media_count=len(album_ids),
             )
         except Exception:
             if not dry_run:
@@ -262,6 +291,12 @@ def _discovered_page_memberships(
         ContainerMembership(media_id, "PAGE", page_id, parent_page_id=page_id)
         for page_id in page_ids
     ]
+
+
+def _discovered_album_memberships(
+    media_id: str, album_ids: Iterable[str]
+) -> list[ContainerMembership]:
+    return [ContainerMembership(media_id, "EVENT", album_id) for album_id in album_ids]
 
 
 def _discovered_tagged_users(

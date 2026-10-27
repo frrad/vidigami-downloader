@@ -53,6 +53,7 @@ def criteria_for(config: AppConfig) -> SelectionCriteria:
     return SelectionCriteria.from_values(
         page_ids=config.vidigami.page_ids,
         tagged_user_ids=config.vidigami.tagged_user_ids,
+        album_ids=config.vidigami.album_ids,
     )
 
 

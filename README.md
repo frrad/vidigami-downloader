@@ -59,6 +59,8 @@ cp config.example.toml config.toml
 ```
 
 Edit only the ignored `config.toml`. Use opaque Vidigami IDs, not display names.
+Specific albums can be watched with `vidigami.album_ids`; use the opaque event
+ID from the album URL and omit UI query parameters such as `?page=1`.
 The production OAuth client currently uses `client_secret_basic`; if the
 provider requires it, put the authorized client secret only in local config.
 
@@ -86,7 +88,7 @@ redirect. Use `auth login --browser` to try the system-browser loopback flow.
 Subsequent scheduled runs use refresh tokens from the OS keychain when the
 provider issues one.
 
-`sync` first completes page and tagged-user enumeration and reconciles those
+`sync` first completes page, album, and tagged-user enumeration and reconciles those
 source IDs in SQLite. Deep metadata, container, and face-tag hydration is then
 limited to new items and prior hydration failures; successfully hydrated old
 items are not rehydrated on later runs. It then atomically downloads the

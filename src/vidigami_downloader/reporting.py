@@ -27,6 +27,7 @@ REPORT_COLUMNS = (
     "containers",
     "face_tags",
     "matched_page_ids",
+    "matched_album_ids",
     "matched_tagged_user_ids",
 )
 
@@ -70,6 +71,7 @@ def build_rows(
         # that case, but never invent container/tag records from a boolean.
         page_ids = _page_ids(item_containers)
         matched_page_ids = _sorted_unique(item.matched_page_ids)
+        matched_album_ids = _sorted_unique(item.matched_album_ids)
         matched_tagged_user_ids = _sorted_unique(item.matched_tag_user_ids)
 
         rows.append(
@@ -90,6 +92,7 @@ def build_rows(
                     for entry in item_tags
                 ],
                 "matched_page_ids": matched_page_ids,
+                "matched_album_ids": matched_album_ids,
                 "matched_tagged_user_ids": matched_tagged_user_ids,
             }
         )

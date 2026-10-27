@@ -17,6 +17,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .queries import (
+    GET_ALBUM_MEDIA_IDS,
     GET_FACE_TAGS_ON_MEDIA,
     GET_LIGHTBOX_MEDIA_CONTAINERS,
     GET_MEDIA_DOWNLOADS,
@@ -278,6 +279,21 @@ class GraphQLClient:
             )
         ]
 
+    def get_album_media_ids(self, album_id: str, *, first: int = 100) -> list[str]:
+        """Enumerate one album, represented by an Event in Vidigami's API."""
+
+        return [
+            str(m["id"])
+            for m in self._paginate(
+                GET_ALBUM_MEDIA_IDS,
+                "GetAlbumMediaIds",
+                "event",
+                "mediaConnection",
+                {"albumId": album_id},
+                first,
+            )
+        ]
+
     def get_user_media(
         self,
         user_id: str,
@@ -423,6 +439,9 @@ class GraphQLClient:
     # SyncEngine.  Batch methods above remain available for efficient hydration.
     def enumerate_page_media(self, page_id: str) -> list[str]:
         return self.get_page_media_ids(page_id)
+
+    def enumerate_album_media(self, album_id: str) -> list[str]:
+        return self.get_album_media_ids(album_id)
 
     def enumerate_tagged_media(self, user_id: str) -> list[str]:
         return self.get_user_media(user_id)
