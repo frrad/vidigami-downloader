@@ -19,6 +19,7 @@ class VidigamiConfig:
     # Optional route slug used by some Vidigami deployments for request headers.
     organization_identifier: str | None = None
     page_ids: tuple[str, ...] = ()
+    album_ids: tuple[str, ...] = ()
     tagged_user_ids: tuple[str, ...] = ()
     include_shared_collections: bool = True
     download_quality: str = "original"
@@ -101,6 +102,7 @@ def load_config(path: Path | None = None) -> AppConfig:
             ),
             space_id=str(vidigami_raw.get("space_id", "")),
             page_ids=tuple(str(value) for value in vidigami_raw.get("page_ids", [])),
+            album_ids=tuple(str(value) for value in vidigami_raw.get("album_ids", [])),
             tagged_user_ids=tuple(
                 str(value) for value in vidigami_raw.get("tagged_user_ids", [])
             ),

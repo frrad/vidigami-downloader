@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from vidigami_downloader.models import (
     ContainerMembership,
     MediaRecord,
@@ -49,6 +51,99 @@ def test_sync_unions_discovery_streams_and_hydrates_all_candidates():
         item.container_id for item in store.snapshot().containers
         if item.media_id == "m1"
     } == {"p1"}
+
+
+def test_sync_watches_specific_album_without_selecting_its_whole_page():
+    class AlbumAPI(FakeAPI):
+        def enumerate_album_media(self, album_id):
+            assert album_id == "event-1"
+            return ["m3"]
+
+    store = StateStore()
+    result = SyncEngine(AlbumAPI(), store).run(
+        SelectionCriteria.from_values(album_ids=["event-1"])
+    )
+
+    assert result.album_media_count == 1
+    assert result.page_media_count == 0
+    assert result.selected_count == 1
+    selected = store.snapshot().containers
+    assert [(item.media_id, item.container_type, item.container_id) for item in selected] == [
+        ("m3", "EVENT", "event-1")
+    ]
+
+
+def test_album_refresh_reconciles_memberships_without_rehydrating_existing_media():
+    class AlbumAPI(FakeAPI):
+        album_media = ["m1", "m2"]
+
+        def enumerate_album_media(self, album_id):
+            return self.album_media
+
+    api = AlbumAPI()
+    store = StateStore()
+    engine = SyncEngine(api, store)
+    criteria = SelectionCriteria.from_values(album_ids=["event-1"])
+    assert engine.run(criteria).hydrated_count == 2
+
+    api.album_media = ["m2", "m3"]
+    refresh = engine.run(criteria)
+    assert refresh.hydrated_count == 1
+    assert refresh.selected_count == 2
+    assert {
+        item.media_id for item in store.snapshot().containers
+        if item.container_id == "event-1"
+    } == {"m2", "m3"}
+
+    api.album_media = []
+    assert engine.run(criteria).selected_count == 0
+    assert any(
+        item.container_id == "event-1" and item.removed_at is not None
+        for item in store.snapshot(include_removed=True).containers
+    )
+    # Album reconciliation leaves unrelated page memberships intact.
+    assert any(item.container_id == "p1" for item in store.snapshot().containers)
+
+
+def test_failed_album_pagination_preserves_existing_memberships():
+    class AlbumAPI(FakeAPI):
+        fail = False
+
+        def enumerate_album_media(self, album_id):
+            yield "m1"
+            if self.fail:
+                raise RuntimeError("pagination failed")
+            yield "m2"
+
+    api = AlbumAPI()
+    store = StateStore()
+    engine = SyncEngine(api, store)
+    criteria = SelectionCriteria.from_values(album_ids=["event-1"])
+    engine.run(criteria)
+    before = store.snapshot()
+    api.fail = True
+    with pytest.raises(RuntimeError, match="pagination failed"):
+        engine.run(criteria)
+    assert store.snapshot() == before
+
+
+def test_album_dry_run_unions_sources_without_writing_state():
+    class AlbumAPI(FakeAPI):
+        def enumerate_album_media(self, album_id):
+            return ["m2", "m3"]
+
+    store = StateStore()
+    result = SyncEngine(AlbumAPI(), store).run(
+        SelectionCriteria.from_values(
+            page_ids=["p1"], album_ids=["event-1"], tagged_user_ids=["u1"]
+        ),
+        dry_run=True,
+    )
+    assert result.candidate_count == result.selected_count == 3
+    assert result.album_media_count == 2
+    assert result.hydrated_count == 0
+    assert store.snapshot().media == ()
+    assert store.connection.execute("SELECT COUNT(*) FROM sync_runs").fetchone()[0] == 0
 
 
 def test_repeat_sync_reconciles_ids_without_deep_hydrating_complete_items():

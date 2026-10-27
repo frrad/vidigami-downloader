@@ -140,8 +140,14 @@ def doctor(config_path: ConfigOption = None) -> None:
         )
     if not config.vidigami.space_id or config.vidigami.space_id.startswith("space|example"):
         problems.append("set vidigami.space_id in ignored config.toml")
-    if not config.vidigami.page_ids and not config.vidigami.tagged_user_ids:
-        problems.append("configure at least one page_ids or tagged_user_ids selector")
+    if not (
+        config.vidigami.page_ids
+        or config.vidigami.album_ids
+        or config.vidigami.tagged_user_ids
+    ):
+        problems.append(
+            "configure at least one page_ids, album_ids, or tagged_user_ids selector"
+        )
     if config.auth.token_auth_method == "client_secret_basic" and not config.auth.client_secret:
         problems.append("set auth.client_secret in ignored config.toml")
     try:
@@ -176,6 +182,8 @@ def sync(
         "hydrated_count": summary.result.hydrated_count,
         "selected_count": summary.result.selected_count,
     }
+    if summary.result.album_media_count:
+        payload["album_media_count"] = summary.result.album_media_count
     if not dry_run:
         payload["downloads"] = {
             "attempted": summary.downloads.attempted,

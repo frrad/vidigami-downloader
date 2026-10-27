@@ -39,11 +39,14 @@ def select_media(
     result: list[SelectedMedia] = []
     for item in media:
         page_matches: set[str] = set()
+        album_matches: set[str] = set()
         for membership in by_media_containers.get(item.media_id, ()):
             if membership.container_id in criteria.page_ids:
                 page_matches.add(membership.container_id)
             if membership.parent_page_id in criteria.page_ids:
                 page_matches.add(membership.parent_page_id)
+            if membership.container_id in criteria.album_ids:
+                album_matches.add(membership.container_id)
         tag_matches = {
             membership.user_id
             for membership in by_media_tags.get(item.media_id, ())
@@ -53,6 +56,7 @@ def select_media(
             item,
             tuple(sorted(page_matches)),
             tuple(sorted(tag_matches)),
+            tuple(sorted(album_matches)),
         )
         if selected.selected:
             result.append(selected)
@@ -82,6 +86,7 @@ def selection_rows(
             "media_id": item.media.media_id,
             "page_ids": list(item.matched_page_ids),
             "tagged_user_ids": list(item.matched_tag_user_ids),
+            "album_ids": list(item.matched_album_ids),
         }
         for item in selected
     ]

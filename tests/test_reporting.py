@@ -23,6 +23,7 @@ def test_report_keeps_canonical_page_container_and_face_tag_ids():
             MediaRecord("media-1", metadata={"displayName": "private name"}),
             matched_page_ids=("page-1",),
             matched_tag_user_ids=("user-1",),
+            matched_album_ids=("album-2",),
         )
     ]
     containers = [
@@ -50,6 +51,7 @@ def test_report_keeps_canonical_page_container_and_face_tag_ids():
         {"tag_id": "tag-2", "tagged_user_id": "user-2"},
     ]
     assert row["matched_page_ids"] == ["page-1"]
+    assert row["matched_album_ids"] == ["album-2"]
     assert row["matched_tagged_user_ids"] == ["user-1"]
     assert "page" not in row
     assert "tags" not in row
@@ -101,6 +103,7 @@ def test_json_and_csv_reports_are_lossless_for_id_fields(tmp_path):
             ],
             "face_tags": [{"tag_id": "tag-1", "tagged_user_id": "user-1"}],
             "matched_page_ids": ["page-1"],
+            "matched_album_ids": ["album-1"],
             "matched_tagged_user_ids": [],
         }
     ]
@@ -111,6 +114,7 @@ def test_json_and_csv_reports_are_lossless_for_id_fields(tmp_path):
     with csv_path.open(newline="", encoding="utf-8") as stream:
         csv_row = next(csv.DictReader(stream))
     assert json.loads(csv_row["page_ids"]) == ["page-1"]
+    assert json.loads(csv_row["matched_album_ids"]) == ["album-1"]
     assert json.loads(csv_row["containers"])[0]["container_id"] == "page-1"
     assert json.loads(csv_row["face_tags"])[0] == {
         "tag_id": "tag-1",

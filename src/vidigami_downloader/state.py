@@ -338,6 +338,33 @@ class StateStore:
             (now, page_id, page_id, *ids),
         )
 
+    def reconcile_album_discovery(
+        self,
+        album_id: str,
+        media_ids: Iterable[str],
+        *,
+        observed_at: datetime | None = None,
+    ) -> None:
+        """Close stale EVENT memberships after a complete album enumeration."""
+
+        now = _ts(observed_at)
+        ids = tuple(set(media_ids))
+        if not ids:
+            self.connection.execute(
+                """UPDATE media_containers SET removed_at=?
+                   WHERE removed_at IS NULL
+                     AND LOWER(container_type)='event' AND container_id=?""",
+                (now, album_id),
+            )
+            return
+        placeholders = ",".join("?" for _ in ids)
+        self.connection.execute(
+            f"""UPDATE media_containers SET removed_at=?
+                WHERE LOWER(container_type)='event' AND container_id=?
+                  AND removed_at IS NULL AND media_id NOT IN ({placeholders})""",
+            (now, album_id, *ids),
+        )
+
     def reconcile_tagged_user_discovery(
         self,
         user_id: str,

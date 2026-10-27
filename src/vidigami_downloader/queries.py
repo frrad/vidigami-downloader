@@ -38,6 +38,17 @@ query GetPageMediaIds($pageId: ID!, $first: Int!, $after: String, $includeCollec
 }
 """.strip()
 
+GET_ALBUM_MEDIA_IDS = """
+query GetAlbumMediaIds($albumId: ID!, $first: Int!, $after: String) {
+  event(id: $albumId) {
+    mediaConnection(first: $first, after: $after) {
+      edges { node { id type } cursor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+""".strip()
+
 GET_USER_MEDIA = """
 query GetUserMedia(
   $after: String
@@ -118,6 +129,7 @@ __all__ = [
     "GET_VIEWER",
     "GET_PAGES",
     "GET_PAGE_MEDIA_IDS",
+    "GET_ALBUM_MEDIA_IDS",
     "GET_USER_MEDIA",
     "GET_LIGHTBOX_MEDIA_CONTAINERS",
     "GET_FACE_TAGS_ON_MEDIA",
