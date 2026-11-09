@@ -13,6 +13,7 @@ from . import __version__
 from .auth import AuthenticationError, ReauthenticationRequired
 from .config import AppConfig, load_config
 from .graphql import GraphQLError, GraphQLHTTPError
+from .progress import ProgressReporter
 from .reporting import rows_from_snapshot, write_csv, write_json
 from .service import (
     backfill_local_metadata,
@@ -170,7 +171,8 @@ def sync(
     """Reconcile membership IDs and download selected media when not dry-running."""
     config = _load(config_path)
     try:
-        summary = run_sync(config, dry_run=dry_run)
+        with ProgressReporter() as progress:
+            summary = run_sync(config, dry_run=dry_run, progress=progress)
     except Exception as exc:
         _error(_safe_error(exc, "Sync failed"))
     payload: dict[str, Any] = {

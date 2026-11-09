@@ -147,7 +147,9 @@ def test_sync_dry_run_reports_counts_without_downloads(monkeypatch: Any, tmp_pat
         downloads=DownloadSummary(0, 0, 0, 0),
     )
 
-    def fake_run_sync(config: Any, *, dry_run: bool = False) -> cli_impl.SyncSummary:
+    def fake_run_sync(
+        config: Any, *, dry_run: bool = False, progress: Any = None
+    ) -> cli_impl.SyncSummary:
         seen["dry_run"] = dry_run
         return summary
 
@@ -186,7 +188,9 @@ def test_sync_reports_download_failures_and_exits_nonzero(
         downloads=DownloadSummary(2, 1, 0, 1),
     )
 
-    monkeypatch.setattr(cli_impl, "run_sync", lambda config, *, dry_run=False: summary)
+    monkeypatch.setattr(
+        cli_impl, "run_sync", lambda config, *, dry_run=False, progress=None: summary
+    )
     result = runner.invoke(app, ["sync", "--config", str(config_path)])
 
     assert result.exit_code == 1

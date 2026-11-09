@@ -19,6 +19,7 @@ from .downloads import DownloadError, DownloadRequest, download_media, hash_file
 from .graphql import DownloadOption, GraphQLClient
 from .metadata import extract_local_metadata
 from .models import SelectedMedia, SelectionCriteria, SyncResult
+from .progress import ProgressCallback, ProgressEvent
 from .selectors import select_from_state
 from .state import StateStore
 from .sync import SyncEngine
@@ -96,6 +97,7 @@ def run_sync(
     dry_run: bool = False,
     api: GraphQLClient | None = None,
     store: StateStore | None = None,
+    progress: ProgressCallback | None = None,
 ) -> SyncSummary:
     """Reconcile configured sources and optionally download selected media."""
 
@@ -103,10 +105,12 @@ def run_sync(
     state = store or open_store(config)
     client = api or graph_client(config)
     try:
-        result = SyncEngine(client, state).run(criteria_for(config), dry_run=dry_run)
+        result = SyncEngine(client, state).run(
+            criteria_for(config), dry_run=dry_run, progress=progress
+        )
         selected = tuple(select_from_state(state, criteria_for(config))) if not dry_run else ()
         downloads = (
-            _download_selected(config, client, state, selected)
+            _download_selected(config, client, state, selected, progress=progress)
             if not dry_run
             else DownloadSummary(0, 0, 0, 0)
         )
@@ -121,14 +125,25 @@ def _download_selected(
     api: GraphQLClient,
     store: StateStore,
     selected: tuple[SelectedMedia, ...],
+    *,
+    progress: ProgressCallback | None = None,
 ) -> DownloadSummary:
+    report = progress or (lambda event: None)
     if not selected:
+        report(ProgressEvent("Downloading files"))
         return DownloadSummary(0, 0, 0, 0)
     media_ids = [item.media.media_id for item in selected]
     records: dict[str, tuple[Mapping[str, Any], list[DownloadOption]]] = {}
+    report(ProgressEvent("Fetching download links", 0, len(media_ids)))
     for start in range(0, len(media_ids), 50):
         records.update(api.get_media_downloads(media_ids[start : start + 50]))
+        report(
+            ProgressEvent(
+                "Fetching download links", min(start + 50, len(media_ids)), len(media_ids)
+            )
+        )
     attempted = completed = reused = failed = 0
+    report(ProgressEvent("Downloading files", 0, len(selected)))
     for item in selected:
         attempted += 1
         record = records.get(item.media.media_id)
@@ -143,6 +158,7 @@ def _download_selected(
                 status="failed",
                 last_error="No compatible download URL was returned",
             )
+            report(ProgressEvent("Downloading files", attempted, len(selected), failed, reused))
             continue
         filename = record[0].get("originalFileName") if record else item.media.filename
         try:
@@ -189,6 +205,7 @@ def _download_selected(
                 status="failed",
                 last_error="Download failed",
             )
+        report(ProgressEvent("Downloading files", attempted, len(selected), failed, reused))
     return DownloadSummary(attempted, completed, reused, failed)
 
 
