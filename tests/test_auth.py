@@ -267,3 +267,99 @@ def test_no_session_requires_reauthentication():
     client = OAuthClient(OAuthConfig(client_id="synthetic-client"), MemoryStore())
     with pytest.raises(ReauthenticationRequired, match="no saved session"):
         client.access_token()
+
+
+def test_direct_login_uses_csrf_json_api_for_identity_spa():
+    transport = FakeHTTPTransport([])
+
+    def authorize(method, url, data):
+        transport.state = parse_qs(urlparse(url).query)["state"][0]
+        return http_result(302, url, location="https://identity.vidigami.com/login")
+
+    def logged_in(method, url, data):
+        assert method == "GET"
+        return http_result(
+            302,
+            url,
+            location="https://app.vidigami.com/auth-callback?code=synthetic&state="
+            + transport.state,
+        )
+
+    transport.responses = [
+        authorize,
+        http_result(200, "", b'{"csrf_token":"synthetic-csrf"}'),
+        http_result(200, "", b'{"ok":true}'),
+        logged_in,
+        http_result(200, "", b'{"access_token":"synthetic-access"}'),
+    ]
+    store = MemoryStore()
+    client = OAuthClient(
+        OAuthConfig(
+            authorization_endpoint="https://identity-api.vidigami.com/oauth2/authorize",
+            client_secret="synthetic-secret",
+        ),
+        store,
+    )
+    result = client.direct_login(
+        username="person@example.invalid",
+        password="synthetic",
+        organization="example-school",
+        transport=transport,
+    )
+    assert result.access_token == "synthetic-access"
+    assert store.tokens == result
+    method, url, data, headers = transport.calls[2]
+    assert method == "POST"
+    assert url == "https://identity-api.vidigami.com/api/login"
+    assert headers["X-CSRF-Token"] == "synthetic-csrf"
+    payload = json.loads(data)
+    assert payload["remember_me"] is True
+    assert payload["organization"] == "example-school"
+    assert payload["redirect"] == transport.calls[0][1]
+    assert len(transport.calls) == 5
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://untrusted.invalid/login",
+        "https://identity.vidigami.com.untrusted.invalid/login",
+        "http://identity.vidigami.com/login",
+    ],
+)
+def test_identity_login_does_not_forward_credentials_to_untrusted_redirect(location):
+    transport = FakeHTTPTransport([http_result(302, "", location=location)])
+    client = OAuthClient(
+        OAuthConfig(authorization_endpoint="https://identity-api.vidigami.com/oauth2/authorize"),
+        MemoryStore(),
+    )
+    with pytest.raises(AuthenticationError, match="unexpected host"):
+        client.direct_login(username="synthetic", password="synthetic", transport=transport)
+    assert len(transport.calls) == 1
+    assert transport.calls[0][2] is None
+
+
+@pytest.mark.parametrize(
+    "csrf,login",
+    [
+        (b"{}", b'{"ok":true}'),
+        (b'{"csrf_token":"synthetic"}', b'{"ok":false}'),
+        (b'{"csrf_token":"synthetic"}', b'{"ok":true,"redirect":"/auth/mfa_login"}'),
+    ],
+)
+def test_identity_login_rejects_missing_csrf_failed_login_and_interactive_step(csrf, login):
+    transport = FakeHTTPTransport(
+        [
+            http_result(302, "", location="https://identity.vidigami.com/login"),
+            http_result(200, "", csrf),
+            http_result(200, "", login),
+        ]
+    )
+    store = MemoryStore()
+    client = OAuthClient(
+        OAuthConfig(authorization_endpoint="https://identity-api.vidigami.com/oauth2/authorize"),
+        store,
+    )
+    with pytest.raises(AuthenticationError):
+        client.direct_login(username="synthetic", password="synthetic", transport=transport)
+    assert store.tokens is None

@@ -34,8 +34,8 @@ The public repository contains code and synthetic examples only. Git ignores:
 - credentials, tokens, and local privacy patterns;
 - SQLite state, downloaded media, reports, metadata, and logs.
 
-Tokens are stored in the operating-system keychain. Downloads use hashed local
-filenames, and signed download URLs are neither stored nor printed. Reports
+Tokens are stored in the ignored `.env` next to the selected `config.toml`.
+Downloads use hashed local filenames, and signed download URLs are neither stored nor printed. Reports
 contain opaque IDs, not names, email addresses, or URLs.
 
 Before every commit, run:
@@ -80,13 +80,31 @@ vidigami verify
 vidigami metadata
 ```
 
-`auth login` uses Vidigami's direct HTML sign-in flow and prompts for the
-username and password without storing either. It retains cookies only in
-memory, keeps the OAuth Authorization Code + PKCE state in memory, and stops
-before requesting the registered `https://app.vidigami.com/auth-callback`
+`auth login` uses Vidigami's direct HTTP sign-in flow. It reads optional
+`VIDIGAMI_USERNAME` and `VIDIGAMI_PASSWORD` environment variables or the `.env`
+file next to the selected `config.toml`, prompting for any missing values.
+Without saved credentials, the command does not persist the username or password.
+It retains cookies and the OAuth Authorization Code + PKCE state only in memory,
+and stops before requesting the registered `https://app.vidigami.com/auth-callback`
 redirect. Use `auth login --browser` to try the system-browser loopback flow.
-Subsequent scheduled runs use refresh tokens from the OS keychain when the
+Subsequent scheduled runs use refresh tokens from `.env` when the
 provider issues one.
+
+To save credentials for later sign-ins, copy `.env.example` to `.env`, fill in
+both values, and run `chmod 600 .env`. This file contains your password in plain
+text and is ignored by Git. Environment variables take precedence over `.env`;
+passwords are read literally without `${...}` expansion. Login reads only the
+two credential variables; the file does not modify the process environment.
+
+When a saved session is missing or its refresh fails, API commands (including
+scheduled `sync`) automatically sign in using these credentials and save the new
+session in `.env` under `VIDIGAMI_OAUTH_SESSION`. Token writes are atomic,
+preserve other variables, and restrict file permissions to the owner. Existing
+Keychain sessions are not read or migrated. Automatic login requires both values
+and never prompts. If the provider requires an interactive step, run `vidigami auth login`.
+Removing the saved session with `auth logout` does not remove saved credentials;
+remove them from `.env` and the environment to disable automatic sign-in.
+`auth login --browser` ignores the saved username/password.
 
 `sync` prints stage counters and elapsed time to stderr as it discovers sources,
 checks metadata, fetches download links, and downloads files. A heartbeat every
@@ -137,9 +155,9 @@ Output is written to the ignored `logs/launchd.out.log` and
 ./scripts/launchd-uninstall.sh
 ```
 
-The agent runs as your macOS user, so it can use the refresh token in that
-user's Keychain. If the token expires or is revoked, run `vidigami auth login`
-interactively again; the scheduler cannot complete an interactive login.
+The agent reads the saved OAuth session from `.env` in the repository root.
+If refresh fails, saved login credentials allow it to sign in again automatically.
+The scheduler cannot complete additional interactive steps such as MFA.
 
 ## Development and CI
 

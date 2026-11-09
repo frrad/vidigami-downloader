@@ -13,8 +13,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .auth import OAuthClient, OAuthConfig
+from .auth import (
+    AuthenticationError,
+    DotenvTokenStore,
+    OAuthClient,
+    OAuthConfig,
+    ReauthenticationRequired,
+)
 from .config import AppConfig
+from .credentials import login_credentials
 from .downloads import DownloadError, DownloadRequest, download_media, hash_file
 from .graphql import DownloadOption, GraphQLClient
 from .metadata import extract_local_metadata
@@ -70,14 +77,36 @@ def oauth_client(config: AppConfig) -> OAuthClient:
             token_endpoint=auth.token_endpoint,
             redirect_uri=auth.redirect_uri,
             token_auth_method=auth.token_auth_method,
-        )
+        ),
+        store=DotenvTokenStore(config.credentials_file),
     )
 
 
 def graph_client(config: AppConfig, auth: OAuthClient | None = None) -> GraphQLClient:
     auth = auth or oauth_client(config)
+
+    def access_token() -> str:
+        try:
+            return auth.access_token()
+        except ReauthenticationRequired:
+            username, password = login_credentials(config.credentials_file)
+            if not username or not password:
+                raise
+
+            def no_prompt(prompt: str) -> str:
+                raise AuthenticationError(
+                    "Automatic login needs an interactive step; run `vidigami auth login`"
+                )
+
+            return auth.direct_login(
+                username=username,
+                password=password,
+                organization=config.vidigami.organization_identifier,
+                input_fn=no_prompt,
+            ).access_token
+
     return GraphQLClient(
-        auth.access_token,
+        access_token,
         timeout=config.network.request_timeout_seconds,
         retries=config.network.max_retries,
         organization_id=config.vidigami.organization_id or None,
