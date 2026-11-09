@@ -12,6 +12,7 @@ from .models import (
     SyncResult,
     TagMembership,
 )
+from .progress import ProgressCallback, ProgressEvent
 from .selectors import select_from_state
 from .state import StateStore
 
@@ -147,7 +148,13 @@ class SyncEngine:
         self.api = api
         self.store = store
 
-    def run(self, criteria: SelectionCriteria, *, dry_run: bool = False) -> SyncResult:
+    def run(
+        self,
+        criteria: SelectionCriteria,
+        *,
+        dry_run: bool = False,
+        progress: ProgressCallback | None = None,
+    ) -> SyncResult:
         run_id = self.store.begin_sync() if not dry_run else "dry-run"
         page_ids: set[str] = set()
         album_ids: set[str] = set()
@@ -158,7 +165,9 @@ class SyncEngine:
         album_discoveries: dict[str, list[str]] = {}
         tagged_discoveries: dict[str, list[str]] = {}
         errors: list[str] = []
+        report = progress or (lambda event: None)
         try:
+            report(ProgressEvent("Discovering pages", 0, len(criteria.page_ids)))
             for page_id in criteria.page_ids:
                 discovered = list(_page_media(self.api, page_id))
                 page_discoveries[page_id] = discovered
@@ -168,16 +177,35 @@ class SyncEngine:
                     # media belongs to the selected page.  Keep it even when
                     # the lightbox/container detail query has no page field.
                     discovered_page_memberships.setdefault(media_id, set()).add(page_id)
+                report(
+                    ProgressEvent(
+                        "Discovering pages", len(page_discoveries), len(criteria.page_ids)
+                    )
+                )
+            report(ProgressEvent("Discovering albums", 0, len(criteria.album_ids)))
             for album_id in criteria.album_ids:
                 discovered = list(_album_media(self.api, album_id))
                 album_discoveries[album_id] = discovered
                 for media_id in discovered:
                     album_ids.add(media_id)
                     discovered_album_memberships.setdefault(media_id, set()).add(album_id)
+                report(
+                    ProgressEvent(
+                        "Discovering albums", len(album_discoveries), len(criteria.album_ids)
+                    )
+                )
+            report(ProgressEvent("Discovering tagged media", 0, len(criteria.tagged_user_ids)))
             for user_id in criteria.tagged_user_ids:
                 discovered = list(_tagged_media(self.api, user_id))
                 tagged_discoveries[user_id] = discovered
                 tagged_ids.update(discovered)
+                report(
+                    ProgressEvent(
+                        "Discovering tagged media",
+                        len(tagged_discoveries),
+                        len(criteria.tagged_user_ids),
+                    )
+                )
             candidates = page_ids | album_ids | tagged_ids
             hydrated = 0
             if not dry_run:
@@ -191,8 +219,9 @@ class SyncEngine:
                     self.store.reconcile_album_discovery(album_id, discovered)
                 for user_id, discovered in tagged_discoveries.items():
                     self.store.reconcile_tagged_user_discovery(user_id, discovered)
+                report(ProgressEvent("Checking metadata", 0, len(candidates)))
                 with self.store.connection:
-                    for media_id in sorted(candidates):
+                    for index, media_id in enumerate(sorted(candidates), 1):
                         savepoint = "media_sync"
                         self.store.connection.execute(f"SAVEPOINT {savepoint}")
                         try:
@@ -253,6 +282,9 @@ class SyncEngine:
                             errors.append(f"{media_id}: {exc}")
                         finally:
                             self.store.connection.execute(f"RELEASE SAVEPOINT {savepoint}")
+                        report(
+                            ProgressEvent("Checking metadata", index, len(candidates), len(errors))
+                        )
                 selected_count = len(select_from_state(self.store, criteria))
             else:
                 selected_count = len(candidates)

@@ -9,6 +9,7 @@ from vidigami_downloader.config import AppConfig, StorageConfig, VidigamiConfig
 from vidigami_downloader.downloads import DownloadError, DownloadResult
 from vidigami_downloader.graphql import DownloadOption
 from vidigami_downloader.models import MediaRecord, SelectedMedia
+from vidigami_downloader.progress import ProgressEvent
 from vidigami_downloader.state import StateStore
 
 
@@ -98,13 +99,15 @@ def test_download_selected_batches_ids_and_records_completed_downloads(
         return DownloadResult(request.media_id, path, len(body), hashlib.sha256(body).hexdigest())
 
     monkeypatch.setattr(service, "download_media", fake_download)
-    summary = service._download_selected(config, api, store, selected)
+    events = []
+    summary = service._download_selected(config, api, store, selected, progress=events.append)
 
     assert [len(batch) for batch in api.batches] == [50, 1]
     assert api.batches[0] == tuple(ids[:50])
     assert api.batches[1] == (ids[50],)
     assert calls == ids
     assert summary == service.DownloadSummary(51, 51, 0, 0)
+    assert events[-1] == ProgressEvent("Downloading files", 51, 51)
     rows = store.connection.execute(
         "SELECT media_id, status, byte_count, sha256 FROM downloads ORDER BY media_id"
     ).fetchall()

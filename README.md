@@ -106,6 +106,13 @@ Removing the saved session with `auth logout` does not remove saved credentials;
 remove them from `.env` and the environment to disable automatic sign-in.
 `auth login --browser` ignores the saved username/password.
 
+`sync` prints stage counters and elapsed time to stderr as it discovers sources,
+checks metadata, fetches download links, and downloads files. A heartbeat every
+10 seconds shows the latest counters even while an API request is waiting.
+Download progress includes reused and failed counts. The final JSON summary
+remains on stdout, so redirecting it to a file still produces valid JSON.
+Progress is also available during `sync --dry-run`.
+
 `sync` first completes page, album, and tagged-user enumeration and reconciles those
 source IDs in SQLite. Deep metadata, container, and face-tag hydration is then
 limited to new items and prior hydration failures; successfully hydrated old
