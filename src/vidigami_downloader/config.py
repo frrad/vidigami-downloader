@@ -69,6 +69,7 @@ class AppConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    credentials_file: Path = Path(".env")
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -80,7 +81,7 @@ def load_config(path: Path | None = None) -> AppConfig:
 
     config_path = path or Path("config.toml")
     if not config_path.exists():
-        return AppConfig()
+        return AppConfig(credentials_file=config_path.parent / ".env")
 
     import tomllib
 
@@ -93,6 +94,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     auth_raw = raw.get("auth", {})
 
     return AppConfig(
+        credentials_file=config_path.parent / ".env",
         vidigami=VidigamiConfig(
             organization_id=str(vidigami_raw.get("organization_id", "")),
             organization_identifier=(

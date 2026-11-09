@@ -12,6 +12,7 @@ import typer
 from . import __version__
 from .auth import AuthenticationError, ReauthenticationRequired
 from .config import AppConfig, load_config
+from .credentials import login_credentials
 from .graphql import GraphQLError, GraphQLHTTPError
 from .reporting import rows_from_snapshot, write_csv, write_json
 from .service import (
@@ -51,17 +52,22 @@ def auth_login(
         help="Use the system-browser loopback flow instead of direct HTTP login.",
     ),
 ) -> None:
-    """Prompt for credentials and save an OAuth session in the OS keychain."""
+    """Read .env/environment credentials or prompt, saving the session in .env."""
     config = _load(config_path)
     try:
         client = oauth_client(config)
         if browser:
             client.login()
         else:
-            client.direct_login()
+            username, password = login_credentials(config.credentials_file)
+            client.direct_login(
+                username=username,
+                password=password,
+                organization=config.vidigami.organization_identifier,
+            )
     except (AuthenticationError, OSError) as exc:
         _error(_safe_error(exc, "Authentication failed"))
-    typer.echo("Authentication succeeded; the token is stored in the OS keychain.")
+    typer.echo("Authentication succeeded; the session is stored in .env.")
 
 
 @auth_app.command("status")
@@ -77,7 +83,7 @@ def auth_status(config_path: ConfigOption = None) -> None:
 
 @auth_app.command("logout")
 def auth_logout(config_path: ConfigOption = None) -> None:
-    """Remove the locally stored OAuth session from the OS keychain."""
+    """Remove the locally stored OAuth session from .env."""
     config = _load(config_path)
     try:
         oauth_client(config).logout()
@@ -151,9 +157,9 @@ def doctor(config_path: ConfigOption = None) -> None:
     if config.auth.token_auth_method == "client_secret_basic" and not config.auth.client_secret:
         problems.append("set auth.client_secret in ignored config.toml")
     try:
-        import keyring  # noqa: F401
+        import dotenv  # noqa: F401
     except ImportError:
-        problems.append("install project dependencies (keyring is missing)")
+        problems.append("install project dependencies (python-dotenv is missing)")
     if problems:
         typer.echo(json.dumps({"ok": False, "problems": problems}, sort_keys=True))
         raise typer.Exit(1)
