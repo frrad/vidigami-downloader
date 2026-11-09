@@ -1,6 +1,6 @@
 """OAuth Authorization Code + PKCE authentication for Vidigami.
 
-The implementation deliberately uses the operating system browser and keychain.
+OAuth sessions are stored in an ignored local .env file.
 It does not read browser profiles, cookies, or local-storage databases.
 """
 
@@ -11,6 +11,7 @@ import getpass
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
 import urllib.parse
@@ -19,6 +20,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import (
@@ -28,6 +30,8 @@ from urllib.request import (
     build_opener,
     urlopen,
 )
+
+from dotenv import dotenv_values, set_key, unset_key
 
 
 class AuthenticationError(RuntimeError):
@@ -100,30 +104,23 @@ class TokenStore(Protocol):
     def clear(self) -> None: ...
 
 
-class KeyringTokenStore:
-    """Token store backed by the platform keychain through ``keyring``."""
+class DotenvTokenStore:
+    """Store the OAuth session beside credentials, preserving unrelated .env keys."""
 
-    def __init__(self, service: str = "vidigami-downloader", account: str = "default") -> None:
-        self.service = service
-        self.account = account
+    key = "VIDIGAMI_OAUTH_SESSION"
 
-    def _keyring(self) -> Any:
-        try:
-            import keyring
-        except ImportError as exc:
-            raise AuthenticationError(
-                "The keyring package is required for authentication; "
-                "install the project dependencies"
-            ) from exc
-        return keyring
+    def __init__(self, path: Path = Path(".env")) -> None:
+        self.path = path
 
     def load(self) -> TokenSet | None:
-        encoded = self._keyring().get_password(self.service, self.account)
+        if not self.path.is_file():
+            return None
+        encoded = dotenv_values(self.path, interpolate=False).get(self.key)
         if not encoded:
             return None
         try:
             payload = json.loads(encoded)
-            if not isinstance(payload, Mapping):
+            if not isinstance(payload, Mapping) or not payload.get("access_token"):
                 raise ValueError
             return TokenSet(
                 access_token=str(payload["access_token"]),
@@ -134,7 +131,7 @@ class KeyringTokenStore:
                 token_type=str(payload.get("token_type") or "Bearer"),
                 scope=_optional_string(payload.get("scope")),
             )
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             raise AuthenticationError(
                 "The saved Vidigami token is invalid; run auth login again"
             ) from exc
@@ -147,14 +144,17 @@ class KeyringTokenStore:
             "token_type": tokens.token_type,
             "scope": tokens.scope,
         }
-        self._keyring().set_password(self.service, self.account, json.dumps(payload))
+        # Start private even when no file exists; set_key atomically rewrites it.
+        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT, 0o600)
+        os.close(fd)
+        self.path.chmod(0o600)
+        set_key(self.path, self.key, json.dumps(payload))
+        self.path.chmod(0o600)
 
     def clear(self) -> None:
-        try:
-            self._keyring().delete_password(self.service, self.account)
-        except Exception as exc:  # keyring backends differ on missing entries
-            if exc.__class__.__name__ not in {"PasswordDeleteError", "KeyringError"}:
-                raise
+        if self.path.is_file():
+            self.path.chmod(0o600)
+            unset_key(self.path, self.key)
 
 
 class CallbackReceiver(Protocol):
@@ -363,7 +363,7 @@ class OAuthClient:
         browser_open: Any = webbrowser.open,
     ) -> None:
         self.config = config
-        self.store = store or KeyringTokenStore()
+        self.store = store or DotenvTokenStore()
         self._opener = opener
         self._browser_open = browser_open
 
@@ -501,6 +501,24 @@ class OAuthClient:
                 callback = self._callback_result(next_url)
                 if callback is not None:
                     return callback
+                # The production identity API now redirects to a separate SPA.
+                # Submit its JSON login to the original API origin only; never
+                # forward credentials to the host supplied by a redirect.
+                if (
+                    urllib.parse.urlparse(self.config.authorization_endpoint).netloc
+                    == "identity-api.vidigami.com"
+                    and urllib.parse.urlparse(next_url).scheme == "https"
+                    and urllib.parse.urlparse(next_url).netloc == "identity.vidigami.com"
+                    and urllib.parse.urlparse(next_url).path == "/login"
+                ):
+                    login_submissions += 1
+                    if login_submissions > 1:
+                        raise AuthenticationError("Vidigami login did not complete")
+                    self._identity_api_login(
+                        authorization_url, username, password, selected_organization, transport
+                    )
+                    current_url, method, data = authorization_url, "GET", None
+                    continue
                 _ensure_auth_host(next_url, self.config.authorization_endpoint)
                 current_url = next_url
                 if response.status in {307, 308}:
@@ -569,6 +587,47 @@ class OAuthClient:
                     urllib.parse.urlencode(values).encode("utf-8"),
                 )
         raise AuthenticationError("Vidigami authentication did not complete")
+
+    def _identity_api_login(
+        self,
+        authorization_url: str,
+        username: str,
+        password: str,
+        organization: str | None,
+        transport: _HTTPTransport,
+    ) -> None:
+        """Use the production SPA's CSRF-protected JSON password login."""
+        origin = "https://identity-api.vidigami.com"
+        csrf = transport.request("GET", origin + "/api/csrf-token")
+        try:
+            csrf_payload = json.loads(csrf.body)
+            csrf_token = csrf_payload.get("csrf_token")
+        except (ValueError, AttributeError) as exc:
+            raise AuthenticationError("Vidigami did not return a CSRF token") from exc
+        if csrf.status != 200 or not isinstance(csrf_token, str) or not csrf_token:
+            raise AuthenticationError("Vidigami did not return a CSRF token")
+        response = transport.request(
+            "POST",
+            origin + "/api/login",
+            data=json.dumps(
+                {
+                    "username": username,
+                    "password": password,
+                    "organization": organization,
+                    "redirect": authorization_url,
+                    "remember_me": True,
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-CSRF-Token": csrf_token},
+        )
+        try:
+            payload = json.loads(response.body)
+        except ValueError as exc:
+            raise AuthenticationError("Vidigami login could not be completed") from exc
+        if response.status != 200 or not isinstance(payload, dict) or not payload.get("ok"):
+            raise AuthenticationError("Vidigami login could not be completed")
+        if payload.get("redirect"):
+            raise AuthenticationError("Vidigami login requires an additional interactive step")
 
     def _callback_result(
         self, url: str
@@ -829,7 +888,7 @@ def _code_challenge(verifier: str) -> str:
 __all__ = [
     "AuthenticationError",
     "CallbackReceiver",
-    "KeyringTokenStore",
+    "DotenvTokenStore",
     "LocalCallbackReceiver",
     "OAuthClient",
     "OAuthConfig",

@@ -11,8 +11,8 @@ requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Vidigami Downloader Contributors" }]
 dependencies = [
-  "keyring>=25,<26",
   "Pillow>=10,<13",
+  "python-dotenv>=1,<2",
   "typer>=0.12,<1",
 ]
 
